@@ -8,7 +8,6 @@ import librosa
 from config import CHANNELS
 
 BUFFER_API_KEY = os.getenv("BUFFER_API_KEY")
-YOUTUBE_COOKIES_DATA = os.getenv("YOUTUBE_COOKIES")
 
 def clean_url(url: str) -> str:
     cleaned = url.strip().strip("'\"").replace(" ", "")
@@ -18,53 +17,38 @@ def clean_url(url: str) -> str:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
     return cleaned
 
-def get_cookie_file():
-    cookie_path = os.path.abspath("cookies.txt")
-    if YOUTUBE_COOKIES_DATA and len(YOUTUBE_COOKIES_DATA.strip()) > 20:
-        with open(cookie_path, "w", encoding="utf-8") as f:
-            f.write(YOUTUBE_COOKIES_DATA.strip() + "\n")
-        return cookie_path
-    cfg_cookie = os.path.expanduser("~/.config/yt-dlp/cookies.txt")
-    if os.path.exists(cfg_cookie) and os.path.getsize(cfg_cookie) > 20:
-        return cfg_cookie
-    return None
-
 def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    cookie_file = get_cookie_file()
-    
-    # أوامر التنزيل الأكثر استقراراً وتوافقاً مع سيرفرات السحاب
+    # التنزيل المباشر بدون كوكيز نهائياً لتفادي حظر الداتاسنتر
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
-        "--geo-bypass",
-        "-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "-f", "best[height<=720]/bestvideo[height<=720]+bestaudio/best",
         "--merge-output-format", "mp4",
-        "-o", "raw_match.mp4"
+        "-o", "raw_match.mp4",
+        clean_link
     ]
 
-    if cookie_file:
-        cmd_download.extend(["--cookies", cookie_file])
-
-    cmd_download.append(clean_link)
-
-    try:
-        subprocess.run(cmd_download, check=True)
-    except subprocess.CalledProcessError:
-        print("⚠️ جاري المحاولة باستخدام التنسيق العام المباشر...")
-        fallback_cmd = [
+    res = subprocess.run(cmd_download, capture_output=True, text=True)
+    if res.returncode != 0:
+        print("⚠️ المحاولة الأولى أرجعت التالي:")
+        print(res.stderr)
+        print("🔄 جاري المحاولة بنمط التوافق العام...")
+        cmd_fallback = [
             "yt-dlp",
             "--no-check-certificates",
-            "--geo-bypass",
-            "-f", "b/best",
-            "-o", "raw_match.mp4"
+            "-f", "ba*+bv*/b",
+            "-o", "raw_match.mp4",
+            clean_link
         ]
-        if cookie_file:
-            fallback_cmd.extend(["--cookies", cookie_file])
-        fallback_cmd.append(clean_link)
-        subprocess.run(fallback_cmd, check=True)
+        res_fb = subprocess.run(cmd_fallback, capture_output=True, text=True)
+        if res_fb.returncode != 0:
+            print("❌ تفاصيل الخطأ الصريح من يوتيوب:")
+            print(res_fb.stderr)
+            raise RuntimeError(res_fb.stderr)
 
     print("🎵 استخراج الصوت لتحليله...")
     cmd_audio = [
