@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Setup Node.js (EJS / JS Runtime for YouTube)
+      - name: Setup Node.js & Install YouTube Solvers
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -41,7 +41,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg curl
 
-      - name: Install Python Dependencies & YouTube Solver
+      - name: Install Python Dependencies & JS Solver
         run: |
           pip install --upgrade pip
           pip install --upgrade "yt-dlp[default]"
