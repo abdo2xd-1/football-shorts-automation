@@ -8,6 +8,7 @@ import librosa
 from config import CHANNELS
 
 BUFFER_API_KEY = os.getenv("BUFFER_API_KEY")
+YOUTUBE_COOKIES_DATA = os.getenv("YOUTUBE_COOKIES")
 
 def clean_url(url: str) -> str:
     cleaned = url.strip().strip("'\"").replace(" ", "")
@@ -17,36 +18,59 @@ def clean_url(url: str) -> str:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
     return cleaned
 
+def get_cookie_file():
+    cookie_path = os.path.abspath("cookies.txt")
+    if YOUTUBE_COOKIES_DATA and len(YOUTUBE_COOKIES_DATA.strip()) > 20:
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write(YOUTUBE_COOKIES_DATA.strip() + "\n")
+        return cookie_path
+    cfg_cookie = os.path.expanduser("~/.config/yt-dlp/cookies.txt")
+    if os.path.exists(cfg_cookie) and os.path.getsize(cfg_cookie) > 20:
+        return cfg_cookie
+    if os.path.exists(cookie_path) and os.path.getsize(cookie_path) > 20:
+        return cookie_path
+    return None
+
 def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
-    print(f"⬇️️ جاري تنزيل الفيديو من الرابط: {clean_link}")
+    print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # استخدام عملاء android_vr و web_creator لتخطي خطأ 403 Forbidden في خوادم السحاب
+    cookie_file = get_cookie_file()
+    if cookie_file:
+        print(f"🔑 استخدام ملف الكوكيز: {cookie_file}")
+    else:
+        print("⚠️ لم يتم العثور على ملف كوكيز صالح!")
+
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--extractor-args", "youtube:player_client=android_vr,web_creator",
+        "--extractor-args", "youtube:player_client=web,web_embedded",
         "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
         "--merge-output-format", "mp4",
-        "-o", "raw_match.mp4",
-        clean_link
+        "-o", "raw_match.mp4"
     ]
+
+    if cookie_file:
+        cmd_download.extend(["--cookies", cookie_file])
+
+    cmd_download.append(clean_link)
 
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ جاري المحاولة باستخدام عميل web_creator منفصلاً بصيغة MP4 مباشرة...")
-        fallback_cmd = [
+        print("⚠️ المحاولة الأولى تعثرت، جاري تجربة التنزيل عبر خيار التوافق المباشر...")
+        cmd_fallback = [
             "yt-dlp",
             "--no-check-certificates",
             "--geo-bypass",
-            "--extractor-args", "youtube:player_client=web_creator",
-            "-f", "b/best",
-            "-o", "raw_match.mp4",
-            clean_link
+            "-f", "b/best[height<=720]/best",
+            "-o", "raw_match.mp4"
         ]
-        subprocess.run(fallback_cmd, check=True)
+        if cookie_file:
+            cmd_fallback.extend(["--cookies", cookie_file])
+        cmd_fallback.append(clean_link)
+        subprocess.run(cmd_fallback, check=True)
 
     print("🎵 استخراج الصوت لتحليله...")
     cmd_audio = [
@@ -99,44 +123,6 @@ def create_shorts(highlights):
 
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "clips.txt", "-c", "copy", "final_shorts.mp4"], check=True)
     print("🎉 تم إنتاج الفيديو النهائي بنجاح: final_shorts.mp4")
-
-def upload_to_buffer(channel_key: str, video_url: str, caption: str):
-    if not BUFFER_API_KEY:
-        print("⚠️ لم يتم العثور على BUFFER_API_KEY.")
-        return
-
-    channel = CHANNELS.get(channel_key)
-    if not channel:
-        raise ValueError(f"Unknown channel: {channel_key}")
-
-    print(f"🚀 إرسال الفيديو إلى Buffer -> القناة: {channel['name']}...")
-    url = "https://api.buffer.com"
-    headers = {
-        "Authorization": f"Bearer {BUFFER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    full_text = f"{caption}\n\n{channel['hashtags']}"
-    mutation = """
-    mutation CreatePost($input: CreatePostInput!) {
-      createPost(input: $input) {
-        post {
-          id
-          status
-        }
-      }
-    }
-    """
-    variables = {
-        "input": {
-            "channelId": channel["channel_id"],
-            "text": full_text,
-            "media": [{"video": {"url": video_url}}],
-            "schedulingType": "NOW"
-        }
-    }
-    res = requests.post(url, json={"query": mutation, "variables": variables}, headers=headers)
-    print("استجابة Buffer:", res.json())
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
