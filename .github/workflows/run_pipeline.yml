@@ -1,29 +1,31 @@
-name: Generate & Publish Shorts
+name: Daily Auto Football Pipeline
 
 on:
+  schedule:
+    # يعمل يومياً الساعة 12 منتصف الليل بتوقيت مصر (21:00 UTC)
+    - cron: '0 21 * * *'
   workflow_dispatch:
+    # متاح أيضاً لتشغيله يدوياً بأي وقت
     inputs:
-      channel:
-        description: 'اختر القناة'
+      target_channel:
+        description: 'اختر القناة أو اتركها all لتشغيل كل القنوات'
         required: true
+        default: 'all'
         type: choice
         options:
+          - 'all'
           - '90_plus'
           - 'hattrick'
           - 'crazy_skills'
-      match_url:
-        description: 'رابط فيديو الماتش على يوتيوب'
-        required: true
-      caption:
-        description: 'عنوان ووصف الفيديو'
-        default: 'Insane Football Highlights! 🔥⚽'
-        required: false
 
 jobs:
-  build:
+  run-pipeline:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        channel: ['90_plus', 'hattrick', 'crazy_skills']
     steps:
-      - name: Check out repo
+      - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -37,7 +39,7 @@ jobs:
           ejs-node: true
           aria2: false
 
-      - name: Install System Dependencies
+      - name: Install System Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
@@ -47,16 +49,29 @@ jobs:
           pip install --upgrade pip
           pip install librosa numpy requests scipy soundfile
 
-      - name: Process Video & Create Shorts
+      # خطوة البحث الذكي عن الماتشات الحقيقية (أقل من 12 ساعة وبدون ألعاب)
+      - name: Find Today's Match
+        run: |
+          python auto_finder.py "${{ matrix.channel }}"
+
+      # تشغيل المونتاج التلقائي بنمط الأوسيلوسكوب أو الشورتس إذا وُجد ماتش
+      - name: Process Match & Generate Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
-          python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
+          if [ -f target_match.txt ]; then
+            MATCH_URL=$(sed -n '1p' target_match.txt)
+            MATCH_TITLE=$(sed -n '2p' target_match.txt)
+            echo "🔥 جاري إنتاج شورتس لـ: $MATCH_TITLE"
+            python process_video.py "${{ matrix.channel }}" "$MATCH_URL" "$MATCH_TITLE"
+          else
+            echo "ℹ️ لم يتم العثور على مباريات جديدة مطابقة للشروط خلال آخر 12 ساعة لهذه القناة."
+          fi
 
-      - name: Upload Final Shorts Artifact
+      - name: Save Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.channel }}-final-shorts
+          name: ${{ matrix.channel }}-daily-shorts
           path: final_shorts.mp4
