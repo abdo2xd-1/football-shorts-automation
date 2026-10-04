@@ -31,26 +31,29 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # إعداد yt-dlp وحل تحديات EJS Node تلقائياً
+      - name: Setup yt-dlp & EJS Engine
+        uses: AnimMouse/setup-yt-dlp@v3
         with:
-          node-version: '20'
+          ejs-node: true
 
-      - name: Install System Tools & FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg curl
+      # تهيئة الكوكيز بشكل تلقائي وموثق
+      - name: Setup YouTube Cookies
+        if: env.YOUTUBE_COOKIES != ''
+        uses: AnimMouse/setup-yt-dlp/cookies@v3
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        with:
+          cookies: ${{ secrets.YOUTUBE_COOKIES }}
 
-      - name: Install yt-dlp & EJS Solver Package
+      - name: Install Python Dependencies
         run: |
           pip install --upgrade pip
-          pip install --upgrade yt-dlp yt-dlp-ejs curl-cffi
           pip install librosa numpy requests scipy soundfile
 
       - name: Process Video & Create Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
           python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
 
