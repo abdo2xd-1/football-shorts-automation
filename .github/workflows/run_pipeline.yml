@@ -31,15 +31,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install System Dependencies
+      - name: Setup Node.js & PO Token Generator
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install System Dependencies & YouTube Token Provider
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg curl
+          # تثبيت حزمة توليد PO-Token الرسمية لتخطي حظر السحاب
+          npm install -g youtube-po-token-generator
 
       - name: Install Python Dependencies
         run: |
           pip install --upgrade pip
-          pip install --upgrade yt-dlp librosa numpy requests scipy soundfile
+          pip install --upgrade "yt-dlp[default]"
+          pip install librosa numpy requests scipy soundfile
 
       - name: Prepare YouTube Cookies
         run: |
