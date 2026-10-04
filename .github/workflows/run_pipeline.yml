@@ -31,15 +31,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg & Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install System Dependencies
+      - name: Install FFmpeg & Deno JS Runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg curl
+          sudo apt-get install -y ffmpeg curl unzip
+          # تثبيت deno لتشغيل جافا سكريبت حل ألغاز يوتيوب تلقائياً
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "/home/runner/.deno/bin" >> $GITHUB_PATH
 
       - name: Install Python Dependencies
         run: |
