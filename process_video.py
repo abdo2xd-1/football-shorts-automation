@@ -8,7 +8,6 @@ import librosa
 from config import CHANNELS
 
 BUFFER_API_KEY = os.getenv("BUFFER_API_KEY")
-YOUTUBE_COOKIES_DATA = os.getenv("YOUTUBE_COOKIES")
 
 def clean_url(url: str) -> str:
     cleaned = url.strip().strip("'\"").replace(" ", "")
@@ -18,36 +17,19 @@ def clean_url(url: str) -> str:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
     return cleaned
 
-def get_cookie_file():
-    cookie_path = os.path.abspath("cookies.txt")
-    if YOUTUBE_COOKIES_DATA and len(YOUTUBE_COOKIES_DATA.strip()) > 20:
-        with open(cookie_path, "w", encoding="utf-8") as f:
-            f.write(YOUTUBE_COOKIES_DATA.strip() + "\n")
-        return cookie_path
-    cfg_cookie = os.path.expanduser("~/.config/yt-dlp/cookies.txt")
-    if os.path.exists(cfg_cookie) and os.path.getsize(cfg_cookie) > 20:
-        return cfg_cookie
-    return None
-
 def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    cookie_file = get_cookie_file()
-    
-    # الاعتماد على عملاء الويب المتوافقين مع EJS JS Engine
-    base_cmd = [
+    # الاعتماد على ملف واحد متصل (Progressive MP4) لمنع تجزئة DASH وحظر 403
+    cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--extractor-args", "youtube:player_client=mweb,web_safari"
-    ]
-    if cookie_file:
-        base_cmd.extend(["--cookies", cookie_file])
-
-    cmd_download = base_cmd + [
-        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
-        "--merge-output-format", "mp4",
+        "-f", "best[ext=mp4][protocol=https]/best[protocol=https]/b",
+        "--concurrent-fragments", "1",
+        "--retries", "10",
+        "--fragment-retries", "10",
         "-o", "raw_match.mp4",
         clean_link
     ]
@@ -55,9 +37,12 @@ def download_and_extract_audio(raw_url: str):
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ جاري المحاولة بنسخة التوافق المباشرة...")
-        fallback_cmd = base_cmd + [
-            "-f", "b/best",
+        print("⚠️ جاري المحاولة باستخدام الصيغة المباشرة 18...")
+        fallback_cmd = [
+            "yt-dlp",
+            "--no-check-certificates",
+            "--geo-bypass",
+            "-f", "18/best",
             "-o", "raw_match.mp4",
             clean_link
         ]
