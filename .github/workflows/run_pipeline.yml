@@ -5,7 +5,6 @@ on:
     # يعمل يومياً الساعة 12 منتصف الليل بتوقيت مصر (21:00 UTC)
     - cron: '0 21 * * *'
   workflow_dispatch:
-    # متاح أيضاً لتشغيله يدوياً بأي وقت
     inputs:
       target_channel:
         description: 'اختر القناة أو اتركها all لتشغيل كل القنوات'
@@ -22,6 +21,7 @@ jobs:
   run-pipeline:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         channel: ['90_plus', 'hattrick', 'crazy_skills']
     steps:
@@ -49,12 +49,10 @@ jobs:
           pip install --upgrade pip
           pip install librosa numpy requests scipy soundfile
 
-      # خطوة البحث الذكي عن الماتشات الحقيقية (أقل من 12 ساعة وبدون ألعاب)
       - name: Find Today's Match
         run: |
           python auto_finder.py "${{ matrix.channel }}"
 
-      # تشغيل المونتاج التلقائي بنمط الأوسيلوسكوب أو الشورتس إذا وُجد ماتش
       - name: Process Match & Generate Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
@@ -66,7 +64,7 @@ jobs:
             echo "🔥 جاري إنتاج شورتس لـ: $MATCH_TITLE"
             python process_video.py "${{ matrix.channel }}" "$MATCH_URL" "$MATCH_TITLE"
           else
-            echo "ℹ️ لم يتم العثور على مباريات جديدة مطابقة للشروط خلال آخر 12 ساعة لهذه القناة."
+            echo "ℹ️ لم يتم العثور على مباريات جديدة لهذه القناة اليوم."
           fi
 
       - name: Save Artifacts
