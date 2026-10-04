@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg & System Packages
+      - name: Install FFmpeg & System Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg curl
@@ -41,13 +41,33 @@ jobs:
           pip install --upgrade pip
           pip install --upgrade yt-dlp librosa numpy requests scipy soundfile
 
-      - name: Process Video
+      - name: Test & Validate YouTube URL
+        id: validate_url
+        run: |
+          echo "🔍 بدء فحص واختبار الرابط المدخل..."
+          RAW_URL="${{ inputs.match_url }}"
+          
+          # 1. إزالة أي مسافات تم إدخالها بالخطأ واستبدالها بشرطة سفلية إذا كانت داخل المعرّف
+          CLEANED_URL=$(echo "$RAW_URL" | sed 's/ /_/g' | tr -d '\"' | tr -d "'" | xargs)
+          echo "الرابط بعد التنظيف: $CLEANED_URL"
+          
+          # 2. اختبار سحب عنوان الفيديو دون تنزيله للتأكد من أنه متاح وليس محجوباً
+          if yt-dlp --no-check-certificates --geo-bypass --extractor-args "youtube:player_client=ios,mweb" --get-title "$CLEANED_URL"; then
+            echo "✅ الرابط صالح ويعمل بنجاح!"
+            echo "valid_url=$CLEANED_URL" >> $GITHUB_OUTPUT
+          else
+            echo "❌ فشل فحص الرابط! الرابط غير متاح أو تالف."
+            exit 1
+          fi
+
+      - name: Process Video & Create Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
         run: |
-          python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
+          python process_video.py "${{ inputs.channel }}" "${{ steps.validate_url.outputs.valid_url }}" "${{ inputs.caption }}"
 
       - name: Upload Final Shorts Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.channel }}-final-shorts
