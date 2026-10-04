@@ -31,22 +31,16 @@ jobs:
         with:
           python-version: '3.11'
 
-      # إعداد yt-dlp ومحرك EJS مع تعطيل aria2 لمنع 403
       - name: Setup yt-dlp & EJS Engine
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
           aria2: false
 
-      # حفظ الكوكيز تلقائياً في مسار yt-dlp
-      - name: Configure YouTube Cookies
-        env:
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+      - name: Install System Dependencies
         run: |
-          mkdir -p ~/.config/yt-dlp
-          echo "$YOUTUBE_COOKIES" > ~/.config/yt-dlp/cookies.txt
-          echo "--cookies ~/.config/yt-dlp/cookies.txt" >> ~/.config/yt-dlp/config
-          echo "✅ تم تثبيت الكوكيز بنجاح!"
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Install Python Dependencies
         run: |
@@ -56,6 +50,7 @@ jobs:
       - name: Process Video & Create Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
           python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
 
