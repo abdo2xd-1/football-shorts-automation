@@ -21,7 +21,7 @@ def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # yt-dlp مهيأ الآن من الـ Workflow لحل الـ EJS والـ Cookies تلقائياً
+    # سيستخدم yt-dlp الكوكيز ومحرك EJS تلقائياً من المسار العام
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
