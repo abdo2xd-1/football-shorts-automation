@@ -21,36 +21,31 @@ def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # أمر التنزيل باستخدام عملاء لا يطلبون PO Token بصيغة mp4 مباشرة
+    # استخدام عميل tv مع مشغل Node.js لتخطي مشكلة The page needs to be reloaded تماماً
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--extractor-args", "youtube:player_client=android_embedded,web_embedded",
-        "-f", "best[height<=720]/bestvideo[height<=720]+bestaudio/best",
-        "--merge-output-format", "mp4",
-        "-o", "raw_match.mp4"
+        "--js-runtimes", "node",
+        "--extractor-args", "youtube:player_client=tv;player_skip=webpage,configs",
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "-o", "raw_match.mp4",
+        clean_link
     ]
-
-    if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
-        print("🔑 تم تفعيل الكوكيز لتسجيل الدخول...")
-        cmd_download.extend(["--cookies", "cookies.txt"])
-
-    cmd_download.append(clean_link)
 
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ المحاولة الأولى تعثرت، جاري التنزيل المباشر لأعلى صيغة صوت وصورة متاحة...")
+        print("⚠️ المحاولة الأولى تعثرت، جاري تجربة التنزيل المباشر كصوت وصورة مدمجة...")
         fallback_cmd = [
             "yt-dlp",
             "--no-check-certificates",
-            "--format-sort", "res:720,ext:mp4:m4a",
-            "-o", "raw_match.mp4"
+            "--js-runtimes", "node",
+            "--extractor-args", "youtube:player_client=tv",
+            "-f", "b/best",
+            "-o", "raw_match.mp4",
+            clean_link
         ]
-        if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
-            fallback_cmd.extend(["--cookies", "cookies.txt"])
-        fallback_cmd.append(clean_link)
         subprocess.run(fallback_cmd, check=True)
 
     print("🎵 استخراج الصوت لتحليله...")
