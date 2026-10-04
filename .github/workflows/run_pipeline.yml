@@ -16,7 +16,7 @@ on:
         required: true
       caption:
         description: 'عنوان ووصف الفيديو'
-        default: 'ملخص وأهداف مباراة البرتغال والدنمارك 🔥⚽'
+        default: 'Insane Football Highlights! 🔥⚽'
         required: false
 
 jobs:
@@ -31,13 +31,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      # إعداد yt-dlp ومحرك EJS الرسمي
+      # إعداد yt-dlp ومحرك EJS مع تعطيل aria2 لمنع 403
       - name: Setup yt-dlp & EJS Engine
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
+          aria2: false
 
-      # تهيئة ملف الكوكيز في إعدادات النظام لتخطي البوتات والحظر
+      # حفظ الكوكيز تلقائياً في مسار yt-dlp
       - name: Configure YouTube Cookies
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
@@ -45,8 +46,7 @@ jobs:
           mkdir -p ~/.config/yt-dlp
           echo "$YOUTUBE_COOKIES" > ~/.config/yt-dlp/cookies.txt
           echo "--cookies ~/.config/yt-dlp/cookies.txt" >> ~/.config/yt-dlp/config
-          echo "--geo-bypass-country EG" >> ~/.config/yt-dlp/config
-          echo "✅ تم تثبيت الكوكيز وتخطي الحظر الجغرافي!"
+          echo "✅ تم تثبيت الكوكيز بنجاح!"
 
       - name: Install Python Dependencies
         run: |
