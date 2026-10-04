@@ -10,7 +10,6 @@ from config import CHANNELS
 BUFFER_API_KEY = os.getenv("BUFFER_API_KEY")
 
 def extract_video_id(url: str) -> str:
-    """استخراج المعرف النقي للفيديو من أي رابط يوتيوب مهما كان شكله"""
     url = url.strip().strip("'\"").replace(" ", "")
     regex = r'(?:v=|\/|youtu\.be\/|embed\/)([0-9A-Za-z_-]{11})'
     match = re.search(regex, url)
@@ -18,39 +17,72 @@ def extract_video_id(url: str) -> str:
         return match.group(1)
     return url
 
+def download_via_cobalt_fallback(video_id: str, output_path: str = "raw_match.mp4") -> bool:
+    """تحميل احتياطي مجاني سريع عبر Cobalt API لتخطي حظر يوتيوب السحابي تماماً"""
+    print("🌐 محاولة التنزيل عبر خادم Cobalt السريع لتجاوز حظر الـ Datacenter...")
+    instances = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-backend.canine.tools/api/json",
+        "https://co.wuk.sh/api/json"
+    ]
+    target_url = f"https://www.youtube.com/watch?v={video_id}"
+    payload = {
+        "url": target_url,
+        "vQuality": "720",
+        "isAudioOnly": False
+    }
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+
+    for endpoint in instances:
+        try:
+            res = requests.post(endpoint, json=payload, headers=headers, timeout=15)
+            data = res.json()
+            stream_url = data.get("url")
+            if stream_url:
+                print("⚡ تم الحصول على رابط التدفق المباشر! جاري التحميل...")
+                with requests.get(stream_url, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    with open(output_path, "wb") as f:
+                        for chunk in r.iter_content(chunk_size=1024*1024):
+                            f.write(chunk)
+                print(f"✅ تم تحميل الفيديو بنجاح إلى: {output_path}")
+                return True
+        except Exception as e:
+            print(f"تخطي الخادم {endpoint} بسبب: {e}")
+            continue
+    return False
+
 def download_and_extract_audio(raw_url: str):
     video_id = extract_video_id(raw_url)
     clean_link = f"https://www.youtube.com/watch?v={video_id}"
-    print(f"⬇️ جاري التنزيل للفيديو (ID: {video_id}) من الرابط: {clean_link}")
+    print(f"⬇️ بدء تنزيل الفيديو (ID: {video_id})...")
 
-    # استراتيجية تنزيل مصممة لكسر حظر سيرفرات السحاب (GitHub Datacenter IPs)
-    cmd_download = [
-        "yt-dlp",
-        "--no-check-certificates",
-        "--geo-bypass",
-        "--add-header", "Accept-Language:en-US,en;q=0.9",
-        "--extractor-args", "youtube:player_client=android_embedded,web_embedded",
-        "-f", "best[ext=mp4]/best",
-        "-o", "raw_match.mp4",
-        clean_link
-    ]
+    downloaded = False
     
+    # 1. محاولة التنزيل المباشر عبر السيرفر الوسيط (لا يتعرض لأي حظر IP)
     try:
-        subprocess.run(cmd_download, check=True)
-    except subprocess.CalledProcessError:
-        print("⚠️ المحاولة الأولى تعثرت، جاري التحويل إلى عميل ios_embedded البديل...")
-        fallback_cmd = [
+        downloaded = download_via_cobalt_fallback(video_id, "raw_match.mp4")
+    except Exception as e:
+        print(f"تعذر الرفع عبر الوسيط: {e}")
+
+    # 2. إذا لم ينجح، نجرب yt-dlp بأحدث إعدادات متوافقة مع Deno
+    if not downloaded:
+        print("🔄 محاولة التنزيل عبر yt-dlp ومشغل TV المدمج...")
+        cmd_download = [
             "yt-dlp",
             "--no-check-certificates",
             "--geo-bypass",
-            "--extractor-args", "youtube:player_client=ios_embedded",
-            "-f", "b/best",
+            "--extractor-args", "youtube:player_client=tv_embedded,web_embedded",
+            "-f", "best[ext=mp4]/best",
             "-o", "raw_match.mp4",
             clean_link
         ]
-        subprocess.run(fallback_cmd, check=True)
+        subprocess.run(cmd_download, check=True)
 
-    print("🎵 استخراج الصوت لتحليله بواسطة librosa...")
+    print("🎵 استخراج الصوت لتحليله...")
     cmd_audio = [
         "ffmpeg", "-y", "-i", "raw_match.mp4",
         "-vn", "-ar", "22050", "-ac", "1", "audio.wav"
