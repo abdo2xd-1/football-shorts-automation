@@ -21,15 +21,14 @@ def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # إعدادات مخصصة لقبول الكوكيز وتخطي خطأ The page needs to be reloaded
+    # استخدام عميل web_creator لتخطي قيود GVS PO Token
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        "--referer", "https://www.youtube.com/",
-        "--extractor-args", "youtube:player_client=mweb,web;player_skip=webpage",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--extractor-args", "youtube:player_client=web_creator",
+        "-f", "bestvideo*+bestaudio/best",
+        "--merge-output-format", "mp4",
         "-o", "raw_match.mp4"
     ]
 
@@ -42,13 +41,13 @@ def download_and_extract_audio(raw_url: str):
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ المحاولة الأولى تعثرت، جاري تجربة التنزيل بصيغة التدفق البديلة...")
+        print("⚠️ المحاولة الأولى تعثرت، جاري المحاولة باستخدام عميل web مع تجاهل قيود الصوت...")
         cmd_fallback = [
             "yt-dlp",
             "--no-check-certificates",
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "--extractor-args", "youtube:player_client=mweb",
-            "-f", "b/best",
+            "--extractor-args", "youtube:player_client=web",
+            "-f", "worstvideo*+worstaudio/worst/best",
+            "--merge-output-format", "mp4",
             "-o", "raw_match.mp4"
         ]
         if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
