@@ -31,35 +31,20 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install System Tools & Dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg curl
 
-      - name: Install Python Dependencies & JS Solver
+      - name: Install Python Dependencies
         run: |
           pip install --upgrade pip
-          pip install --upgrade yt-dlp
-          pip install --upgrade git+https://github.com/yt-dlp/yt-dlp-ejs.git || true
-          pip install librosa numpy requests scipy soundfile
-
-      - name: Prepare YouTube Cookies
-        run: |
-          if [ -n "${{ secrets.YOUTUBE_COOKIES }}" ]; then
-            echo "${{ secrets.YOUTUBE_COOKIES }}" > cookies.txt
-            echo "✅ تم تجهيز ملف الكوكيز بنجاح!"
-          else
-            echo "⚠️ تنبيه: لم يتم العثور على YOUTUBE_COOKIES secret"
-          fi
+          pip install --upgrade yt-dlp librosa numpy requests scipy soundfile
 
       - name: Process Video & Create Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
           python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
 
