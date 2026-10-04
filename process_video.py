@@ -21,13 +21,15 @@ def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # استخدام عملاء Android/TV لتفادي أزمة تشفير web n-challenge
+    # إعدادات مخصصة لقبول الكوكيز وتخطي خطأ The page needs to be reloaded
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--extractor-args", "youtube:player_client=android,tv,ios",
-        "-f", "best[ext=mp4]/best",
+        "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "--referer", "https://www.youtube.com/",
+        "--extractor-args", "youtube:player_client=mweb,web;player_skip=webpage",
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "-o", "raw_match.mp4"
     ]
 
@@ -36,7 +38,23 @@ def download_and_extract_audio(raw_url: str):
         cmd_download.extend(["--cookies", "cookies.txt"])
 
     cmd_download.append(clean_link)
-    subprocess.run(cmd_download, check=True)
+
+    try:
+        subprocess.run(cmd_download, check=True)
+    except subprocess.CalledProcessError:
+        print("⚠️ المحاولة الأولى تعثرت، جاري تجربة التنزيل بصيغة التدفق البديلة...")
+        cmd_fallback = [
+            "yt-dlp",
+            "--no-check-certificates",
+            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "--extractor-args", "youtube:player_client=mweb",
+            "-f", "b/best",
+            "-o", "raw_match.mp4"
+        ]
+        if os.path.exists("cookies.txt") and os.path.getsize("cookies.txt") > 0:
+            cmd_fallback.extend(["--cookies", "cookies.txt"])
+        cmd_fallback.append(clean_link)
+        subprocess.run(cmd_fallback, check=True)
 
     print("🎵 استخراج الصوت لتحليله...")
     cmd_audio = [
@@ -89,6 +107,44 @@ def create_shorts(highlights):
 
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "clips.txt", "-c", "copy", "final_shorts.mp4"], check=True)
     print("🎉 تم إنتاج الفيديو النهائي بنجاح: final_shorts.mp4")
+
+def upload_to_buffer(channel_key: str, video_url: str, caption: str):
+    if not BUFFER_API_KEY:
+        print("⚠️ لم يتم العثور على BUFFER_API_KEY.")
+        return
+
+    channel = CHANNELS.get(channel_key)
+    if not channel:
+        raise ValueError(f"Unknown channel: {channel_key}")
+
+    print(f"🚀 إرسال الفيديو إلى Buffer -> القناة: {channel['name']}...")
+    url = "https://api.buffer.com"
+    headers = {
+        "Authorization": f"Bearer {BUFFER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    full_text = f"{caption}\n\n{channel['hashtags']}"
+    mutation = """
+    mutation CreatePost($input: CreatePostInput!) {
+      createPost(input: $input) {
+        post {
+          id
+          status
+        }
+      }
+    }
+    """
+    variables = {
+        "input": {
+            "channelId": channel["channel_id"],
+            "text": full_text,
+            "media": [{"video": {"url": video_url}}],
+            "schedulingType": "NOW"
+        }
+    }
+    res = requests.post(url, json={"query": mutation, "variables": variables}, headers=headers)
+    print("استجابة Buffer:", res.json())
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
