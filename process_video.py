@@ -23,7 +23,7 @@ def setup_cookies_file():
     if YOUTUBE_COOKIES_DATA and len(YOUTUBE_COOKIES_DATA.strip()) > 50:
         with open(cookie_path, "w", encoding="utf-8") as f:
             f.write(YOUTUBE_COOKIES_DATA.strip() + "\n")
-        print(f"✅ تم إنشاء ملف الكوكيز بنجاح في: {cookie_path}")
+        print(f"✅ تم تجهيز ملف الكوكيز في: {cookie_path}")
         return cookie_path
     elif os.path.exists(cookie_path) and os.path.getsize(cookie_path) > 50:
         return cookie_path
@@ -35,11 +35,13 @@ def download_and_extract_audio(raw_url: str):
 
     cookie_file = setup_cookies_file()
 
+    # استخدام صيغة جاهزة مدمجة مع Node.js لتجاوز تحديات التشفير
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--js-runtimes", "node",
+        "-f", "18/best[height<=720]/best",
         "-o", "raw_match.mp4"
     ]
 
@@ -51,12 +53,13 @@ def download_and_extract_audio(raw_url: str):
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ جاري المحاولة بصيغة بديلة...")
+        print("⚠️ المحاولة الأولى تعثرت، جاري تنزيل الصوت والفيديو عبر صيغة 22/best...")
         cmd_fallback = [
             "yt-dlp",
             "--no-check-certificates",
             "--geo-bypass",
-            "-f", "b/best",
+            "--js-runtimes", "node",
+            "-f", "22/best",
             "-o", "raw_match.mp4"
         ]
         if cookie_file:
@@ -94,7 +97,7 @@ def find_highlight_timestamps(audio_file="audio.wav", threshold_ratio=0.80):
     return selected
 
 def create_shorts(highlights):
-    print("✂️️ قص وتعديل الكادر لمقاس Shorts (1080x1920)...")
+    print("✂️ قص وتعديل الكادر لمقاس Shorts (1080x1920)...")
     clip_list = []
     for idx, (s, e) in enumerate(highlights):
         out_name = f"part_{idx}.mp4"
@@ -115,6 +118,44 @@ def create_shorts(highlights):
 
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "clips.txt", "-c", "copy", "final_shorts.mp4"], check=True)
     print("🎉 تم إنتاج الفيديو النهائي بنجاح: final_shorts.mp4")
+
+def upload_to_buffer(channel_key: str, video_url: str, caption: str):
+    if not BUFFER_API_KEY:
+        print("⚠️ لم يتم العثور على BUFFER_API_KEY.")
+        return
+
+    channel = CHANNELS.get(channel_key)
+    if not channel:
+        raise ValueError(f"Unknown channel: {channel_key}")
+
+    print(f"🚀 إرسال الفيديو إلى Buffer -> القناة: {channel['name']}...")
+    url = "https://api.buffer.com"
+    headers = {
+        "Authorization": f"Bearer {BUFFER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    full_text = f"{caption}\n\n{channel['hashtags']}"
+    mutation = """
+    mutation CreatePost($input: CreatePostInput!) {
+      createPost(input: $input) {
+        post {
+          id
+          status
+        }
+      }
+    }
+    """
+    variables = {
+        "input": {
+            "channelId": channel["channel_id"],
+            "text": full_text,
+            "media": [{"video": {"url": video_url}}],
+            "schedulingType": "NOW"
+        }
+    }
+    res = requests.post(url, json={"query": mutation, "variables": variables}, headers=headers)
+    print("استجابة Buffer:", res.json())
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
