@@ -11,19 +11,21 @@ BUFFER_API_KEY = os.getenv("BUFFER_API_KEY")
 def clean_url(url: str) -> str:
     """تنظيف الرابط وإزالة المسافات وعلامات التنصيص الزائدة"""
     cleaned = url.strip().strip("'\"")
-    # إزالة أي مسافات موجودة داخل الرابط
     return cleaned.replace(" ", "")
 
 def download_and_extract_audio(youtube_url: str):
+    """تنزيل الفيديو بتخطي حظر البوت واستخراج مسار الصوت"""
     clean_link = clean_url(youtube_url)
     print(f"⬇️ جاري تنزيل الفيديو من: {clean_link}")
 
+    # استخدام عملاء iOS/mweb مع User-Agent مخصص لتخطي Sign in to confirm you're not a bot
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--extractor-args", "youtube:player_client=tv,android,web",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+        "--extractor-args", "youtube:player_client=ios,mweb",
+        "-f", "b/best",
         "-o", "raw_match.mp4",
         clean_link
     ]
@@ -37,6 +39,7 @@ def download_and_extract_audio(youtube_url: str):
     subprocess.run(cmd_audio, check=True)
 
 def find_highlight_timestamps(audio_file="audio.wav", threshold_ratio=0.80):
+    """رصد اللقطات الأكثر حماساً وصراخاً للمعلق والجمهور"""
     print("🔍 تحليل قمم الصراخ والحماس الصوتي...")
     y, sr = librosa.load(audio_file, sr=22050)
     rms = librosa.feature.rms(y=y)[0]
@@ -59,6 +62,7 @@ def find_highlight_timestamps(audio_file="audio.wav", threshold_ratio=0.80):
     return selected
 
 def create_shorts(highlights):
+    """قص اللقطات وتحويل الكادر لنسبة 9:16 ودمجها في فيديو نهائي"""
     print("✂️ قص وتعديل الكادر لمقاس Shorts (1080x1920)...")
     clip_list = []
     for idx, (s, e) in enumerate(highlights):
@@ -74,12 +78,52 @@ def create_shorts(highlights):
         subprocess.run(cmd, check=True)
         clip_list.append(out_name)
 
+    # دمج المقاطع
     with open("clips.txt", "w", encoding="utf-8") as f:
         for c in clip_list:
             f.write(f"file '{c}'\n")
 
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "clips.txt", "-c", "copy", "final_shorts.mp4"], check=True)
     print("🎉 تم إنتاج الفيديو النهائي بنجاح: final_shorts.mp4")
+
+def upload_to_buffer(channel_key: str, video_url: str, caption: str):
+    """إرسال المنشور إلى Buffer عبر GraphQL API"""
+    if not BUFFER_API_KEY:
+        print("⚠️ لم يتم العثور على BUFFER_API_KEY.")
+        return
+
+    channel = CHANNELS.get(channel_key)
+    if not channel:
+        raise ValueError(f"Unknown channel: {channel_key}")
+
+    print(f"🚀 إرسال الفيديو إلى Buffer -> القناة: {channel['name']}...")
+    url = "https://api.buffer.com"
+    headers = {
+        "Authorization": f"Bearer {BUFFER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    full_text = f"{caption}\n\n{channel['hashtags']}"
+    mutation = """
+    mutation CreatePost($input: CreatePostInput!) {
+      createPost(input: $input) {
+        post {
+          id
+          status
+        }
+      }
+    }
+    """
+    variables = {
+        "input": {
+            "channelId": channel["channel_id"],
+            "text": full_text,
+            "media": [{"video": {"url": video_url}}],
+            "schedulingType": "NOW"
+        }
+    }
+    res = requests.post(url, json={"query": mutation, "variables": variables}, headers=headers)
+    print("استجابة Buffer:", res.json())
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
@@ -93,6 +137,7 @@ if __name__ == "__main__":
     download_and_extract_audio(url_arg)
     moments = find_highlight_timestamps()
     if not moments:
-        moments = [(0, 30)]
+        # احتياطي في حالة المقاطع الهادئة صوتياً: أخذ أول 35 ثانية
+        moments = [(0, 35)]
     create_shorts(moments)
     print("✅ اكتمل المونتاج واستخراج الفيديو بنجاح.")
