@@ -36,15 +36,16 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install System Dependencies
+      - name: Install System Tools & FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg curl
 
-      - name: Install Python Dependencies
+      - name: Install yt-dlp & EJS Solver Package
         run: |
           pip install --upgrade pip
-          pip install --upgrade yt-dlp librosa numpy requests scipy soundfile
+          pip install --upgrade yt-dlp yt-dlp-ejs curl-cffi
+          pip install librosa numpy requests scipy soundfile
 
       - name: Process Video & Create Shorts
         env:
