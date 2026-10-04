@@ -35,13 +35,15 @@ def download_and_extract_audio(raw_url: str):
 
     cookie_file = setup_cookies_file()
 
-    # استخدام صيغة جاهزة مدمجة مع Node.js لتجاوز تحديات التشفير
+    # استخدام EJS solver واستبعاد المشغل المعطوب tv_downgraded
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
         "--js-runtimes", "node",
-        "-f", "18/best[height<=720]/best",
+        "--remote-components", "ejs:github",
+        "--extractor-args", "youtube:player_client=web_safari,web_embedded,-tv_downgraded",
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "-o", "raw_match.mp4"
     ]
 
@@ -53,13 +55,14 @@ def download_and_extract_audio(raw_url: str):
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ المحاولة الأولى تعثرت، جاري تنزيل الصوت والفيديو عبر صيغة 22/best...")
+        print("⚠️ جاري المحاولة باستخدام صيغة بديلة...")
         cmd_fallback = [
             "yt-dlp",
             "--no-check-certificates",
             "--geo-bypass",
             "--js-runtimes", "node",
-            "-f", "22/best",
+            "--remote-components", "ejs:github",
+            "-f", "b/best",
             "-o", "raw_match.mp4"
         ]
         if cookie_file:
