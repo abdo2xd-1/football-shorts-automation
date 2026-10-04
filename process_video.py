@@ -21,12 +21,11 @@ def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # استخدام التنزيل المباشر وإلغاء aria2c لمنع خطأ 403 status code 22
+    # التنزيل المباشر بمحرك yt-dlp القياسي
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--downloader", "default",
         "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
         "--merge-output-format", "mp4",
         "-o", "raw_match.mp4",
@@ -41,7 +40,6 @@ def download_and_extract_audio(raw_url: str):
             "yt-dlp",
             "--no-check-certificates",
             "--geo-bypass",
-            "--downloader", "default",
             "-f", "18/best",
             "-o", "raw_match.mp4",
             clean_link
