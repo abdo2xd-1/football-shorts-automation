@@ -1,0 +1,44 @@
+name: Generate & Publish Shorts
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'اختر القناة'
+        required: true
+        type: choice
+        options:
+          - '90_plus'
+          - 'hattrick'
+          - 'crazy_skills'
+      match_url:
+        description: 'رابط فيديو الماتش على يوتيوب'
+        required: true
+      caption:
+        description: 'عنوان ووصف الفيديو'
+        default: 'Insane Football Moments! ⚡⚽'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Process Video
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+        run: |
+          python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
