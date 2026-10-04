@@ -21,12 +21,12 @@ def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # تخطي الحظر الجغرافي لقنوات beIN SPORTS عبر محاكاة دولة مصر EG
+    # استخدام التنزيل المباشر وإلغاء aria2c لمنع خطأ 403 status code 22
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--geo-bypass-country", "EG",
+        "--downloader", "default",
         "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
         "--merge-output-format", "mp4",
         "-o", "raw_match.mp4",
@@ -36,14 +36,13 @@ def download_and_extract_audio(raw_url: str):
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ المحاولة الأولى تعثرت، جاري التنزيل مع تفعيل X-Forwarded-For لمصر...")
+        print("⚠️ المحاولة الأولى تعثرت، جاري التنزيل المباشر بصيغة 18/best...")
         fallback_cmd = [
             "yt-dlp",
             "--no-check-certificates",
             "--geo-bypass",
-            "--geo-bypass-country", "EG",
-            "--add-header", "X-Forwarded-For: 156.204.1.1",
-            "-f", "b/best",
+            "--downloader", "default",
+            "-f", "18/best",
             "-o", "raw_match.mp4",
             clean_link
         ]
@@ -146,7 +145,7 @@ if __name__ == "__main__":
 
     channel_arg = sys.argv[1]
     url_arg = sys.argv[2]
-    caption_arg = sys.argv[3] if len(sys.argv) > 3 else "ملخص وأهداف مباراة البرتغال والدنمارك 🔥⚽"
+    caption_arg = sys.argv[3] if len(sys.argv) > 3 else "Insane Football Highlights! 🔥⚽"
 
     download_and_extract_audio(url_arg)
     moments = find_highlight_timestamps()
