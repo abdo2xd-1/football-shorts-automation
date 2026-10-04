@@ -29,16 +29,24 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install yt-dlp librosa numpy requests
 
       - name: Process Video
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
         run: |
           python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
+
+      - name: Save Generated Shorts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.channel }}-final-shorts
+          path: final_shorts.mp4
