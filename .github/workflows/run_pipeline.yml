@@ -31,13 +31,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install FFmpeg & System Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg curl
 
-      - name: Install Dependencies
+      - name: Install Python Dependencies
         run: |
           pip install --upgrade pip
-          pip install yt-dlp librosa numpy requests scipy soundfile
+          pip install --upgrade yt-dlp librosa numpy requests scipy soundfile
 
       - name: Process Video
         env:
