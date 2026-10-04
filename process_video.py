@@ -8,7 +8,6 @@ import librosa
 from config import CHANNELS
 
 BUFFER_API_KEY = os.getenv("BUFFER_API_KEY")
-YOUTUBE_COOKIES_DATA = os.getenv("YOUTUBE_COOKIES")
 
 def clean_url(url: str) -> str:
     cleaned = url.strip().strip("'\"").replace(" ", "")
@@ -18,57 +17,22 @@ def clean_url(url: str) -> str:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
     return cleaned
 
-def setup_cookies_file():
-    cookie_path = os.path.abspath("cookies.txt")
-    if YOUTUBE_COOKIES_DATA and len(YOUTUBE_COOKIES_DATA.strip()) > 50:
-        with open(cookie_path, "w", encoding="utf-8") as f:
-            f.write(YOUTUBE_COOKIES_DATA.strip() + "\n")
-        print(f"✅ تم تجهيز ملف الكوكيز في: {cookie_path}")
-        return cookie_path
-    elif os.path.exists(cookie_path) and os.path.getsize(cookie_path) > 50:
-        return cookie_path
-    return None
-
 def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    cookie_file = setup_cookies_file()
-
-    # استخدام EJS solver واستبعاد المشغل المعطوب tv_downgraded
+    # yt-dlp مهيأ الآن من الـ Workflow لحل الـ EJS والـ Cookies تلقائياً
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
-        "--js-runtimes", "node",
-        "--remote-components", "ejs:github",
-        "--extractor-args", "youtube:player_client=web_safari,web_embedded,-tv_downgraded",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "-o", "raw_match.mp4"
+        "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
+        "--merge-output-format", "mp4",
+        "-o", "raw_match.mp4",
+        clean_link
     ]
 
-    if cookie_file:
-        cmd_download.extend(["--cookies", cookie_file])
-
-    cmd_download.append(clean_link)
-
-    try:
-        subprocess.run(cmd_download, check=True)
-    except subprocess.CalledProcessError:
-        print("⚠️ جاري المحاولة باستخدام صيغة بديلة...")
-        cmd_fallback = [
-            "yt-dlp",
-            "--no-check-certificates",
-            "--geo-bypass",
-            "--js-runtimes", "node",
-            "--remote-components", "ejs:github",
-            "-f", "b/best",
-            "-o", "raw_match.mp4"
-        ]
-        if cookie_file:
-            cmd_fallback.extend(["--cookies", cookie_file])
-        cmd_fallback.append(clean_link)
-        subprocess.run(cmd_fallback, check=True)
+    subprocess.run(cmd_download, check=True)
 
     print("🎵 استخراج الصوت لتحليله...")
     cmd_audio = [
