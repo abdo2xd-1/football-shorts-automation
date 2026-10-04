@@ -19,13 +19,14 @@ def clean_url(url: str) -> str:
 
 def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
-    print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
+    print(f"⬇️️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
-    # التنزيل المباشر بمحرك yt-dlp القياسي
+    # استخدام عملاء android_vr و web_creator لتخطي خطأ 403 Forbidden في خوادم السحاب
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
         "--geo-bypass",
+        "--extractor-args", "youtube:player_client=android_vr,web_creator",
         "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best",
         "--merge-output-format", "mp4",
         "-o", "raw_match.mp4",
@@ -35,12 +36,13 @@ def download_and_extract_audio(raw_url: str):
     try:
         subprocess.run(cmd_download, check=True)
     except subprocess.CalledProcessError:
-        print("⚠️ المحاولة الأولى تعثرت، جاري التنزيل المباشر بصيغة 18/best...")
+        print("⚠️ جاري المحاولة باستخدام عميل web_creator منفصلاً بصيغة MP4 مباشرة...")
         fallback_cmd = [
             "yt-dlp",
             "--no-check-certificates",
             "--geo-bypass",
-            "-f", "18/best",
+            "--extractor-args", "youtube:player_client=web_creator",
+            "-f", "b/best",
             "-o", "raw_match.mp4",
             clean_link
         ]
