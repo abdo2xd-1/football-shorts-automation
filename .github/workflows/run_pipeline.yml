@@ -31,20 +31,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      # إعداد yt-dlp وحل تحديات EJS Node تلقائياً
+      # إعداد yt-dlp ومحرك EJS بنجاح
       - name: Setup yt-dlp & EJS Engine
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
 
-      # تهيئة الكوكيز بشكل تلقائي وموثق
-      - name: Setup YouTube Cookies
-        if: env.YOUTUBE_COOKIES != ''
-        uses: AnimMouse/setup-yt-dlp/cookies@v3
+      # وضع ملف الكوكيز في مسار yt-dlp الافتراضي
+      - name: Configure YouTube Cookies
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
-        with:
-          cookies: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          mkdir -p ~/.config/yt-dlp
+          echo "$YOUTUBE_COOKIES" > ~/.config/yt-dlp/cookies.txt
+          echo "--cookies ~/.config/yt-dlp/cookies.txt" >> ~/.config/yt-dlp/config
+          echo "✅ تم تثبيت الكوكيز في إعدادات yt-dlp العامة!"
 
       - name: Install Python Dependencies
         run: |
