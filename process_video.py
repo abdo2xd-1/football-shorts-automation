@@ -21,10 +21,12 @@ def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
     print(f"⬇️ جاري تنزيل الفيديو من الرابط: {clean_link}")
 
+    # استخدام عملاء Android/TV لتفادي أزمة تشفير web n-challenge
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
-        "--js-runtimes", "node",
+        "--geo-bypass",
+        "--extractor-args", "youtube:player_client=android,tv,ios",
         "-f", "best[ext=mp4]/best",
         "-o", "raw_match.mp4"
     ]
@@ -62,7 +64,7 @@ def find_highlight_timestamps(audio_file="audio.wav", threshold_ratio=0.80):
             last_time = t
 
     selected = highlights[:6]
-    print(f"🎯 تم تحديد {len(selected)} لقطة حماسية.")
+    print(f"🎯 تم تحديد {len(selected)} لقطة حماسية: {selected}")
     return selected
 
 def create_shorts(highlights):
@@ -97,7 +99,6 @@ if __name__ == "__main__":
     url_arg = sys.argv[2]
     caption_arg = sys.argv[3] if len(sys.argv) > 3 else "Insane Football Highlights! 🔥⚽"
 
-    # بدء دورة العمل الكاملة
     download_and_extract_audio(url_arg)
     moments = find_highlight_timestamps()
     if not moments:
