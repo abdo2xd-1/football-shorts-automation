@@ -37,7 +37,7 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
-          pip install yt-dlp librosa numpy requests
+          pip install yt-dlp librosa numpy requests scipy soundfile
 
       - name: Process Video
         env:
@@ -45,7 +45,7 @@ jobs:
         run: |
           python process_video.py "${{ inputs.channel }}" "${{ inputs.match_url }}" "${{ inputs.caption }}"
 
-      - name: Save Generated Shorts
+      - name: Upload Final Shorts Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.channel }}-final-shorts
