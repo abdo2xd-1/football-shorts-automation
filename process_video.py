@@ -10,11 +10,8 @@ YOUTUBE_COOKIES_DATA = os.getenv("YOUTUBE_COOKIES")
 
 def clean_url(url: str) -> str:
     cleaned = url.strip().strip("'\"").replace(" ", "")
-    regex = r'(?:v=|\/|youtu\.be\/|embed\/)([0-9A-Za-z_-]{11})'
-    match = re.search(regex, cleaned)
-    if match:
-        return f"https://www.youtube.com/watch?v={match.group(1)}"
-    return cleaned
+    match = re.search(r'(?:v=|\/|youtu\.be\/|embed\/)([0-9A-Za-z_-]{11})', cleaned)
+    return f"https://www.youtube.com/watch?v={match.group(1)}" if match else cleaned
 
 def prepare_cookies():
     cookie_path = os.path.abspath("cookies.txt")
@@ -55,90 +52,121 @@ def download_video(raw_url: str, output_raw="match_raw.mp4"):
         cmd_fallback.append(clean_link)
         subprocess.run(cmd_fallback, check=True)
 
-def find_best_goal_moment(audio_file="audio.wav"):
-    """تحديد لقطة الهدف وتفادي البدايات والمراسم"""
+def find_90s_summary_clips(audio_file="audio.wav"):
+    """تحديد هجمات وأهداف متعددة لإنتاج ملخص مدته 90 ثانية (دقيقة ونصف)"""
     y, sr = librosa.load(audio_file, sr=22050)
     rms = librosa.feature.rms(y=y)[0]
     times = librosa.frames_to_time(range(len(rms)), sr=sr)
 
-    # تخطي أول 90 ثانية لضمان استبعاد النشيد الوطني والمراسم
-    total_duration = times[-1] if len(times) > 0 else 0
-    skip_start = min(90.0, total_duration * 0.2)
-    valid_indices = [i for i, t in enumerate(times) if t > skip_start]
-
+    # تخطي أول 60 ثانية لتجنب المراسم والنشيد الوطني
+    valid_indices = [i for i, t in enumerate(times) if t > 60]
     if not valid_indices:
-        return 90, 120
+        return [(60 + i * 10, 70 + i * 10) for i in range(9)]
 
-    # البحث عن أعلى قمة صوتية (صراخ الهدف)
-    max_idx = valid_indices[np.argmax(rms[valid_indices])]
-    peak_time = times[max_idx]
+    valid_rms = rms[valid_indices]
+    threshold = np.percentile(valid_rms, 80)
+    peaks = [times[i] for i in valid_indices if rms[i] > threshold]
 
-    # أخذ 12 ثانية قبل الصراخ (الهجمة والتسديد) و18 ثانية بعده (الاحتفال)
-    start_time = max(0, peak_time - 12)
-    end_time = start_time + 30
-    return start_time, end_time
+    clips = []
+    last_end = -30
 
-def render_clean_short(raw_video, start_time, duration, title_text, output_file):
-    # تنظيف العنوان ليبقى مختصراً داخل الشريط
-    clean_title = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', '', title_text)
-    clean_title = " ".join(clean_title.split()[:5])
+    for p in peaks:
+        if p - last_end > 12:
+            start = max(0, p - 4.0)
+            end = p + 5.5  # لقطة مدتها 9.5 ثوانٍ
+            clips.append((start, end))
+            last_end = end
+            if len(clips) >= 9:  # 9 لقطات * ~10 ثوانٍ = ~90 ثانية
+                break
 
-    filter_complex = (
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg];"
-        "[0:v]scale=1080:-2[fg];"
-        "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
-        f"[base]drawbox=y=140:color=black@0.65:width=iw:height=120:t=fill,"
-        f"drawtext=text='{clean_title}':fontsize=36:fontcolor=white:x=(w-text_w)/2:y=180[v]"
-    )
+    if len(clips) < 5:
+        # خطة بديلة لتغطية 90 ثانية متتابعة
+        base = 70
+        clips = [(base + i * 10, base + (i + 1) * 10) for i in range(9)]
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", str(start_time),
-        "-t", str(duration),
-        "-i", raw_video,
-        "-filter_complex", filter_complex,
-        "-map", "[v]",
-        "-map", "0:a",
-        "-af", f"afade=t=in:ss=0:d=0.4,afade=t=out:st={duration - 0.4}:d=0.4",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "128k",
-        output_file
-    ]
-    subprocess.run(cmd, check=True)
+    return clips
 
-def process_all_matches():
+def render_summary_short(raw_video, clips, title_clean, output_file):
+    clip_files = []
+    
+    # تبسيط العنوان وتنسيقه لسطر واحد في المنتصف
+    safe_title = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', '', title_clean).strip()
+    safe_title = " ".join(safe_title.split()[:5])
+
+    for idx, (s, e) in enumerate(clips):
+        part_name = f"part_{idx}.mp4"
+        duration = e - s
+
+        filter_complex = (
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg];"
+            "[0:v]scale=1080:-2[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
+            f"[base]drawbox=y=130:color=black@0.65:width=iw:height=120:t=fill,"
+            f"drawtext=text='{safe_title}':fontsize=38:fontcolor=white:x=(w-text_w)/2:y=170[v]"
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(s),
+            "-t", str(duration),
+            "-i", raw_video,
+            "-filter_complex", filter_complex,
+            "-map", "[v]",
+            "-map", "0:a",
+            "-af", f"afade=t=in:ss=0:d=0.25,afade=t=out:st={duration - 0.25}:d=0.25",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-c:a", "aac", "-b:a", "128k",
+            part_name
+        ]
+        subprocess.run(cmd, check=True)
+        clip_files.append(part_name)
+
+    # دمج كافة اللقطات للحصول على 90 ثانية متصلة
+    with open("concat_list.txt", "w", encoding="utf-8") as f:
+        for p in clip_files:
+            f.write(f"file '{p}'\n")
+
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "concat_list.txt", "-c", "copy", output_file], check=True)
+
+    for p in clip_files:
+        if os.path.exists(p):
+            os.remove(p)
+    if os.path.exists("concat_list.txt"):
+        os.remove("concat_list.txt")
+
+def process_all():
     if not os.path.exists("matches_queue.json"):
-        print("ℹ لا يوجد ملف مهام matches_queue.json")
+        print("ℹ لا يوجد ملف matches_queue.json")
         return
 
     with open("matches_queue.json", "r", encoding="utf-8") as f:
         queue = json.load(f)
 
     if not queue:
-        print("ℹ قائمة المباريات فارغة لليوم.")
+        print("ℹ لا توجد مباريات جديدة مستخرجة لليوم.")
         return
 
     os.makedirs("output_shorts", exist_ok=True)
 
     for idx, match in enumerate(queue):
         url = match["url"]
-        title = match["title"]
+        title = match.get("title", f"مباراة {idx+1}")
         teams = match.get("teams", f"Match_{idx+1}")
-        print(f"\n🎬 [{idx+1}/{len(queue)}] معالجة: {teams}")
 
+        print(f"\n🎬 معالجة ملخص دقيقة ونصف: {title}")
         raw_name = f"raw_{idx}.mp4"
         audio_name = f"audio_{idx}.wav"
-        safe_teams = re.sub(r'[^a-zA-Z0-9_\u0600-\u06FF]', '_', teams)
-        out_short = f"output_shorts/short_{idx+1}_{safe_teams}.mp4"
+        safe_name = re.sub(r'[^a-zA-Z0-9_\u0600-\u06FF]', '_', teams)
+        out_short = f"output_shorts/short_{idx+1}_{safe_name}.mp4"
 
         try:
             download_video(url, raw_name)
             subprocess.run(["ffmpeg", "-y", "-i", raw_name, "-vn", "-ar", "22050", "-ac", "1", audio_name], check=True)
-            s, e = find_best_goal_moment(audio_name)
-            render_clean_short(raw_name, s, 30, title, out_short)
-            print(f"✅ تم إنتاج: {out_short}")
+            clips = find_90s_summary_clips(audio_name)
+            render_summary_short(raw_name, clips, title, out_short)
+            print(f"✅ تم إنتاج الملخص بنجاح (90 ثانية): {out_short}")
         except Exception as e:
-            print(f"❌ تعثر إنتاج هذه المباراة: {e}")
+            print(f"❌ تعثر إنتاج المباراة: {e}")
         finally:
             for tmp in [raw_name, audio_name]:
                 if os.path.exists(tmp):
@@ -148,4 +176,4 @@ def process_all_matches():
                         pass
 
 if __name__ == "__main__":
-    process_all_matches()
+    process_all()
