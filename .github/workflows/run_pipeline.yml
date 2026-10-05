@@ -1,4 +1,4 @@
-name: Gemini AI Autonomous Football Pipeline
+name: Autonomous Multi-Channel Football Pipeline
 
 on:
   schedule:
@@ -8,6 +8,7 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -37,20 +38,18 @@ jobs:
           pip install --upgrade pip
           pip install librosa numpy requests scipy soundfile
 
-      - name: Query Gemini for Today's Scheduled Matches
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - name: Find Today's Matches Directly
         run: |
           python auto_finder.py "${{ matrix.channel }}"
 
-      - name: Process & Render All Match Shorts
+      - name: Process & Render 90s Multi-Highlight Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
           python process_video.py
 
-      - name: Upload All Generated Shorts
+      - name: Upload Generated Shorts
         if: always()
         uses: actions/upload-artifact@v4
         with:
