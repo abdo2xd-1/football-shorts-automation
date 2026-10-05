@@ -55,30 +55,40 @@ def download_video(raw_url: str, output_raw="match_raw.mp4"):
         cmd_fallback.append(clean_link)
         subprocess.run(cmd_fallback, check=True)
 
-def find_best_moment(audio_file="audio.wav"):
+def find_best_goal_moment(audio_file="audio.wav"):
+    """تحديد لقطة الهدف وتفادي البدايات والمراسم"""
     y, sr = librosa.load(audio_file, sr=22050)
     rms = librosa.feature.rms(y=y)[0]
     times = librosa.frames_to_time(range(len(rms)), sr=sr)
 
-    valid_indices = [i for i, t in enumerate(times) if t > 40]
-    if not valid_indices:
-        return 40, 70
+    # تخطي أول 90 ثانية لضمان استبعاد النشيد الوطني والمراسم
+    total_duration = times[-1] if len(times) > 0 else 0
+    skip_start = min(90.0, total_duration * 0.2)
+    valid_indices = [i for i, t in enumerate(times) if t > skip_start]
 
+    if not valid_indices:
+        return 90, 120
+
+    # البحث عن أعلى قمة صوتية (صراخ الهدف)
     max_idx = valid_indices[np.argmax(rms[valid_indices])]
     peak_time = times[max_idx]
 
+    # أخذ 12 ثانية قبل الصراخ (الهجمة والتسديد) و18 ثانية بعده (الاحتفال)
     start_time = max(0, peak_time - 12)
     end_time = start_time + 30
     return start_time, end_time
 
-def render_short(raw_video, start_time, duration, title_text, output_file):
-    clean_title = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', '', title_text)[:42]
+def render_clean_short(raw_video, start_time, duration, title_text, output_file):
+    # تنظيف العنوان ليبقى مختصراً داخل الشريط
+    clean_title = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', '', title_text)
+    clean_title = " ".join(clean_title.split()[:5])
+
     filter_complex = (
         "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg];"
         "[0:v]scale=1080:-2[fg];"
         "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
-        f"[base]drawbox=y=130:color=black@0.65:width=iw:height=130:t=fill,"
-        f"drawtext=text='{clean_title}':fontsize=38:fontcolor=white:x=(w-text_w)/2:y=175[v]"
+        f"[base]drawbox=y=140:color=black@0.65:width=iw:height=120:t=fill,"
+        f"drawtext=text='{clean_title}':fontsize=36:fontcolor=white:x=(w-text_w)/2:y=180[v]"
     )
 
     cmd = [
@@ -114,25 +124,22 @@ def process_all_matches():
         url = match["url"]
         title = match["title"]
         teams = match.get("teams", f"Match_{idx+1}")
-        print(f"\n🎬 [{idx+1}/{len(queue)}] جاري إنتاج شورتس لـ: {teams}")
+        print(f"\n🎬 [{idx+1}/{len(queue)}] معالجة: {teams}")
 
         raw_name = f"raw_{idx}.mp4"
         audio_name = f"audio_{idx}.wav"
-        out_short = f"output_shorts/short_{idx+1}_{teams.replace(' ', '_')}.mp4"
+        safe_teams = re.sub(r'[^a-zA-Z0-9_\u0600-\u06FF]', '_', teams)
+        out_short = f"output_shorts/short_{idx+1}_{safe_teams}.mp4"
 
         try:
             download_video(url, raw_name)
-            # استخراج الصوت
             subprocess.run(["ffmpeg", "-y", "-i", raw_name, "-vn", "-ar", "22050", "-ac", "1", audio_name], check=True)
-            # تحديد اللحظة الذهبية المتصلة
-            s, e = find_best_moment(audio_name)
-            # ريندر الفيديو الكامل
-            render_short(raw_name, s, 30, title, out_short)
+            s, e = find_best_goal_moment(audio_name)
+            render_clean_short(raw_name, s, 30, title, out_short)
             print(f"✅ تم إنتاج: {out_short}")
         except Exception as e:
             print(f"❌ تعثر إنتاج هذه المباراة: {e}")
         finally:
-            # تنظيف المساحة فوراً
             for tmp in [raw_name, audio_name]:
                 if os.path.exists(tmp):
                     try:
