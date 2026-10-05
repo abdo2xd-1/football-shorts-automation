@@ -4,83 +4,94 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 
-# الكلمات الممنوعة تماماً لاستبعاد الألعاب والافتراضيات
+# الكلمات الممنوعة نهائياً لاستبعاد ألعاب الفيديو
 BANNED_KEYWORDS = [
-    "fifa", "pes", "efootball", "fc 24", "fc 25", "ps5", "ps4",
-    "gameplay", "mod", "simulation", "محاكاة", "بلايستيشن", "بيس", "فيفا"
+    "fifa", "pes", "efootball", "fc 24", "fc 25", "fc 26", "ps5", "ps4",
+    "gameplay", "mod", "simulation", "محاكاة", "بلايستيشن", "بيس", "فيفا", "e-football"
 ]
 
-# كلمات البحث العامة لجميع مباريات الدوريات المحددة
+# كلمات بحث موسعة تشمل كل مباريات المنتخبات والدوريات لليوم
 CHANNEL_SEARCH_TOPICS = {
+    "crazy_skills": [
+        "ملخص مباراة منتخب اليوم",
+        "أهداف مباريات المنتخبات اليوم",
+        "highlights international match today",
+        "World cup qualifiers highlights",
+        "AFCON qualifiers highlights",
+        "تصفيات كأس العالم ملخص",
+        "ملخص مباريات اليوم المنتخبات"
+    ],
     "90_plus": [
-        "Premier League full match highlights",
-        "La Liga match highlights",
-        "Champions League highlights",
+        "Premier League highlights today",
+        "La Liga highlights today",
+        "Champions League highlights today",
         "أهداف الدوري الإنجليزي اليوم",
         "أهداف الدوري الإسباني اليوم",
-        "ملخص دوري أبطال أوروبا"
+        "ملخص مباريات الدوري الانجليزي"
     ],
     "hattrick": [
-        "ملخص مباريات الدوري المصري اليوم",
-        "أهداف الدوري المصري الممتاز",
-        "Serie A match highlights",
-        "Ligue 1 match highlights",
+        "ملخص الدوري المصري اليوم",
+        "أهداف الدوري المصري اليوم",
+        "Serie A highlights today",
+        "Ligue 1 highlights today",
         "أهداف الدوري الإيطالي اليوم",
-        "أهداف الدوري الفرنسي اليوم"
-    ],
-    "crazy_skills": [
-        "UEFA Nations League match highlights",
-        "ملخص تصفيات كأس العالم أفريقيا",
-        "World Cup Qualifiers CONMEBOL highlights",
-        "ملخص مباريات تصفيات آسيا اليوم",
-        "International friendly highlights"
+        "ملخص مباريات الدوري الفرنسي"
     ]
 }
 
-def is_strictly_within_12_hours(upload_timestamp: int, upload_date_str: str) -> bool:
-    """التحقق الصارم من أن الفيديو لم يمر على رفعه أكثر من 12 ساعة"""
+def is_video_within_12_hours(upload_date_str: str, timestamp: int) -> bool:
+    """التحقق المرن والدقيق من أن الفيديو رُفع اليوم أو خلال آخر 12-18 ساعة"""
     now = datetime.now(timezone.utc)
     
-    # 1. إذا كان الـ timestamp متاحاً
-    if upload_timestamp:
-        video_time = datetime.fromtimestamp(upload_timestamp, timezone.utc)
-        age = now - video_time
-        return timedelta(0) <= age <= timedelta(hours=12)
-        
-    # 2. إذا كان التاريخ كنص بصيغة YYYYMMDD
+    # إذا توفر timestamp دقيق
+    if timestamp:
+        try:
+            v_time = datetime.fromtimestamp(timestamp, timezone.utc)
+            diff = now - v_time
+            if timedelta(seconds=0) <= diff <= timedelta(hours=14):
+                return True
+        except Exception:
+            pass
+
+    # إذا توفر تاريخ YYYYMMDD
     if upload_date_str and len(upload_date_str) == 8:
         try:
-            video_date = datetime.strptime(upload_date_str, "%Y%m%d").replace(tzinfo=timezone.utc)
-            # التأكد أنه تاريخ اليوم أو الأمس القريب جداً
-            return (now - video_date).total_seconds() <= 12 * 3600
+            v_year = int(upload_date_str[:4])
+            v_month = int(upload_date_str[4:6])
+            v_day = int(upload_date_str[6:8])
+            v_date = datetime(v_year, v_month, v_day, tzinfo=timezone.utc)
+            
+            # يُقبل إذا كان تاريخ اليوم أو أمس
+            day_diff = (now.date() - v_date.date()).days
+            if day_diff in [0, 1]:
+                return True
         except Exception:
             pass
 
     return False
 
-def is_valid_real_football(title: str, duration: int) -> bool:
-    title_lower = title.lower()
-    for ban in BANNED_KEYWORDS:
-        if ban in title_lower:
+def is_valid_football_match(title: str, duration: int) -> bool:
+    t_lower = title.lower()
+    for b in BANNED_KEYWORDS:
+        if b in t_lower:
             return False
             
-    # مدة ملخص كروي حقيقي (من 90 ثانية حتى 15 دقيقة)
-    if not (90 <= duration <= 900):
+    # مدة ملخص حقيقي (بين دقيقة ونصف إلى 18 دقيقة)
+    if not (80 <= duration <= 1080):
         return False
         
     return True
 
 def find_match_for_channel(channel_key: str):
     searches = CHANNEL_SEARCH_TOPICS.get(channel_key, [])
-    print(f"📡 بدء فحص مباريات آخر 12 ساعة لقناة: {channel_key}...")
+    print(f"📡 بدء فحص مباريات اليوم المرفوعة حديثاً لقناة: {channel_key}...")
 
+    # البحث بالترتيب حسب تاريخ الرفع الأحدث
     for query in searches:
-        print(f"🔍 فحص: {query}")
-        
-        # استرجاع أحدث 10 فيديوهات مع التواريخ بدقة
+        print(f"🔍 البحث عن: '{query}'...")
         cmd = [
             "yt-dlp",
-            f"ytsearch10:{query}",
+            f"ytsearch15:{query}",
             "--dump-json",
             "--flat-playlist",
             "--no-warnings"
@@ -98,35 +109,34 @@ def find_match_for_channel(channel_key: str):
                 vid_id = item.get("id")
                 title = item.get("title", "")
                 duration = item.get("duration", 0) or 0
-                timestamp = item.get("timestamp")
-                upload_date = item.get("upload_date")
                 
-                # فحص الشرط الحقيقي والزمني (أقل من 12 ساعة)
-                if is_valid_real_football(title, duration):
-                    # التحقق بدقة من تاريخ النشر الفعلي
-                    detail_cmd = [
-                        "yt-dlp",
-                        "--dump-json",
-                        "--no-warnings",
-                        f"https://www.youtube.com/watch?v={vid_id}"
-                    ]
-                    detail_res = subprocess.run(detail_cmd, capture_output=True, text=True)
-                    if detail_res.returncode == 0:
-                        details = json.loads(detail_res.stdout)
-                        v_time = details.get("timestamp")
-                        v_date = details.get("upload_date")
-                        
-                        if is_strictly_within_12_hours(v_time, v_date):
-                            url = f"https://www.youtube.com/watch?v={vid_id}"
-                            print(f"🎯 تم العثور على ماتش حقيقي مرفوع خلال آخر 12 ساعة: {title}")
-                            return url, title
+                if not is_valid_football_match(title, duration):
+                    continue
+
+                # سحب بيانات التوقيت المؤكدة للفيديو
+                info_cmd = [
+                    "yt-dlp",
+                    "--dump-json",
+                    "--no-warnings",
+                    f"https://www.youtube.com/watch?v={vid_id}"
+                ]
+                info_res = subprocess.run(info_cmd, capture_output=True, text=True)
+                if info_res.returncode == 0:
+                    data = json.loads(info_res.stdout)
+                    v_time = data.get("timestamp")
+                    v_date = data.get("upload_date")
+                    
+                    if is_video_within_12_hours(v_date, v_time):
+                        url = f"https://www.youtube.com/watch?v={vid_id}"
+                        print(f"✅ تم التقاط مباراة حقيقية مرفوعة حديثاً: {title}")
+                        return url, title
             except Exception:
                 continue
 
     return None, None
 
 if __name__ == "__main__":
-    ch = sys.argv[1] if len(sys.argv) > 1 else "90_plus"
+    ch = sys.argv[1] if len(sys.argv) > 1 else "crazy_skills"
     found_url, found_title = find_match_for_channel(ch)
     
     if found_url:
@@ -134,4 +144,4 @@ if __name__ == "__main__":
             f.write(f"{found_url}\n{found_title}")
         print(f"TARGET_FOUND: {found_url}")
     else:
-        print("NO_TARGETS_FOUND: لا توجد مباريات منشورة خلال آخر 12 ساعة مطابقة للشروط.")
+        print("NO_TARGETS_FOUND")
