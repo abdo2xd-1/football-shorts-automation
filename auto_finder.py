@@ -4,71 +4,84 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 
-# الكلمات الممنوعة نهائياً لاستبعاد ألعاب الفيديو
+# الكلمات الممنوعة قطعياً لاستبعاد ألعاب الفيديو والمحاكاة
 BANNED_KEYWORDS = [
     "fifa", "pes", "efootball", "fc 24", "fc 25", "fc 26", "ps5", "ps4",
     "gameplay", "mod", "simulation", "محاكاة", "بلايستيشن", "بيس", "فيفا", "e-football"
 ]
 
-# كلمات بحث موسعة تشمل كل مباريات المنتخبات والدوريات لليوم
-CHANNEL_SEARCH_TOPICS = {
-    "crazy_skills": [
-        "ملخص مباراة منتخب اليوم",
-        "أهداف مباريات المنتخبات اليوم",
-        "highlights international match today",
-        "World cup qualifiers highlights",
-        "AFCON qualifiers highlights",
-        "تصفيات كأس العالم ملخص",
-        "ملخص مباريات اليوم المنتخبات"
-    ],
+# قاموس شامل لكافة البطولات الرسمية المقسمة على القنوات الثلاث
+CHANNEL_DATABASE = {
+    # 1. قناة كبار أوروبا وبطولات العالم للأندية
     "90_plus": [
-        "Premier League highlights today",
-        "La Liga highlights today",
-        "Champions League highlights today",
-        "أهداف الدوري الإنجليزي اليوم",
-        "أهداف الدوري الإسباني اليوم",
-        "ملخص مباريات الدوري الانجليزي"
+        # إنجلترا
+        "ملخص الدوري الإنجليزي اليوم", "Premier League highlights today",
+        "ملخص كأس الاتحاد الإنجليزي", "FA Cup highlights today",
+        "ملخص كأس الرابطة الإنجليزية", "Carabao Cup highlights today",
+        "ملخص الدرع الخيرية", "Community Shield highlights",
+        # إسبانيا
+        "ملخص الدوري الإسباني اليوم", "La Liga highlights today",
+        "ملخص كأس ملك إسبانيا", "Copa del Rey highlights today",
+        "ملخص السوبر الإسباني", "Supercopa de Espana highlights",
+        # ألمانيا
+        "ملخص الدوري الألماني اليوم", "Bundesliga highlights today",
+        "ملخص كأس ألمانيا", "DFB-Pokal highlights today",
+        "ملخص السوبر الألماني", "DFL-Supercup highlights",
+        # بطولات أندية أوروبا والعالم
+        "ملخص دوري أبطال أوروبا اليوم", "Champions League highlights today",
+        "ملخص الدوري الأوروبي اليوم", "Europa League highlights today",
+        "ملخص دوري المؤتمر الأوروبي", "Conference League highlights",
+        "ملخص السوبر الأوروبي", "UEFA Super Cup highlights",
+        "ملخص كأس العالم للأندية", "FIFA Club World Cup highlights",
+        "ملخص كأس القارات للأندية", "FIFA Intercontinental Cup highlights"
     ],
+
+    # 2. الدوري المصري والبطولات الأفريقية والدوريات التكتيكية (إيطاليا وفرنسا)
     "hattrick": [
-        "ملخص الدوري المصري اليوم",
-        "أهداف الدوري المصري اليوم",
-        "Serie A highlights today",
-        "Ligue 1 highlights today",
-        "أهداف الدوري الإيطالي اليوم",
-        "ملخص مباريات الدوري الفرنسي"
+        # مصر
+        "ملخص الدوري المصري اليوم", "ملخص أهداف الدوري المصري الممتاز",
+        "ملخص كأس مصر اليوم", "Egypt Cup highlights",
+        "ملخص السوبر المصري", "Egyptian Super Cup highlights",
+        "ملخص كأس رابطة الأندية المصرية", "EPL Cup Egypt highlights",
+        # بطولات أفريقيا للأندية
+        "ملخص دوري أبطال أفريقيا اليوم", "CAF Champions League highlights today",
+        "ملخص كأس الكونفيدرالية اليوم", "CAF Confederation Cup highlights",
+        "ملخص كأس السوبر الأفريقي", "CAF Super Cup highlights",
+        "ملخص الدوري الأفريقي", "African Football League highlights",
+        # إيطاليا
+        "ملخص الدوري الإيطالي اليوم", "Serie A highlights today",
+        "ملخص كأس إيطاليا", "Coppa Italia highlights today",
+        "ملخص السوبر الإيطالي", "Supercoppa Italiana highlights",
+        # فرنسا
+        "ملخص الدوري الفرنسي اليوم", "Ligue 1 highlights today",
+        "ملخص كأس فرنسا", "Coupe de France highlights",
+        "ملخص كأس الأبطال الفرنسي", "Trophee des Champions highlights"
+    ],
+
+    # 3. كافة بطولات المنتخبات الوطنية القارية والدولية
+    "crazy_skills": [
+        # أوروبا
+        "ملخص دوري الأمم الأوروبية اليوم", "UEFA Nations League highlights today",
+        "ملخص كأس الأمم الأوروبية", "UEFA Euro highlights",
+        "تصفيات أوروبا لكأس العالم ملخص", "European Qualifiers highlights today",
+        # أفريقيا
+        "ملخص كأس الأمم الأفريقية", "AFCON highlights",
+        "ملخص تصفيات كأس العالم أفريقيا اليوم", "African World Cup Qualifiers highlights",
+        "ملخص بطولة أمم أفريقيا للمحليين", "CHAN highlights",
+        # أمريكا الجنوبية والشمالية
+        "ملخص كوبا أمريكا", "Copa America highlights",
+        "ملخص تصفيات كأس العالم أمريكا الجنوبية", "CONMEBOL qualifiers highlights",
+        "ملخص الكأس الذهبية", "CONCACAF Gold Cup highlights",
+        "ملخص دوري أمم الكونكاكاف", "CONCACAF Nations League highlights",
+        # آسيا
+        "ملخص كأس آسيا", "AFC Asian Cup highlights",
+        "ملخص تصفيات كأس العالم آسيا اليوم", "Asian Qualifiers highlights today",
+        # العالمية للمنتخبات
+        "ملخص كأس العالم", "FIFA World Cup highlights",
+        "ملخص الفيناليسيما", "Finalissima highlights",
+        "ملخص مباريات دولية ودية اليوم", "International friendly highlights today"
     ]
 }
-
-def is_video_within_12_hours(upload_date_str: str, timestamp: int) -> bool:
-    """التحقق المرن والدقيق من أن الفيديو رُفع اليوم أو خلال آخر 12-18 ساعة"""
-    now = datetime.now(timezone.utc)
-    
-    # إذا توفر timestamp دقيق
-    if timestamp:
-        try:
-            v_time = datetime.fromtimestamp(timestamp, timezone.utc)
-            diff = now - v_time
-            if timedelta(seconds=0) <= diff <= timedelta(hours=14):
-                return True
-        except Exception:
-            pass
-
-    # إذا توفر تاريخ YYYYMMDD
-    if upload_date_str and len(upload_date_str) == 8:
-        try:
-            v_year = int(upload_date_str[:4])
-            v_month = int(upload_date_str[4:6])
-            v_day = int(upload_date_str[6:8])
-            v_date = datetime(v_year, v_month, v_day, tzinfo=timezone.utc)
-            
-            # يُقبل إذا كان تاريخ اليوم أو أمس
-            day_diff = (now.date() - v_date.date()).days
-            if day_diff in [0, 1]:
-                return True
-        except Exception:
-            pass
-
-    return False
 
 def is_valid_football_match(title: str, duration: int) -> bool:
     t_lower = title.lower()
@@ -76,22 +89,29 @@ def is_valid_football_match(title: str, duration: int) -> bool:
         if b in t_lower:
             return False
             
-    # مدة ملخص حقيقي (بين دقيقة ونصف إلى 18 دقيقة)
-    if not (80 <= duration <= 1080):
+    # قبول الملخصات الواقعية حتى 35 دقيقة لتشمل التغطيات الرسمية الموسعة
+    if not (60 <= duration <= 2100):
         return False
         
     return True
 
 def find_match_for_channel(channel_key: str):
-    searches = CHANNEL_SEARCH_TOPICS.get(channel_key, [])
+    searches = CHANNEL_DATABASE.get(channel_key, [])
     print(f"📡 بدء فحص مباريات اليوم المرفوعة حديثاً لقناة: {channel_key}...")
 
-    # البحث بالترتيب حسب تاريخ الرفع الأحدث
+    # فلترة تاريخ اليوم وأمس
+    now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(days=1)
+    date_filter = yesterday.strftime("%Y%m%d")
+
     for query in searches:
         print(f"🔍 البحث عن: '{query}'...")
+        
+        # استعلام فرز الأحدث مع فلتر التاريخ
         cmd = [
             "yt-dlp",
-            f"ytsearch15:{query}",
+            f"ytsearch10:{query}",
+            "--dateafter", date_filter,
             "--dump-json",
             "--flat-playlist",
             "--no-warnings"
@@ -109,27 +129,11 @@ def find_match_for_channel(channel_key: str):
                 vid_id = item.get("id")
                 title = item.get("title", "")
                 duration = item.get("duration", 0) or 0
-                
-                if not is_valid_football_match(title, duration):
-                    continue
 
-                # سحب بيانات التوقيت المؤكدة للفيديو
-                info_cmd = [
-                    "yt-dlp",
-                    "--dump-json",
-                    "--no-warnings",
-                    f"https://www.youtube.com/watch?v={vid_id}"
-                ]
-                info_res = subprocess.run(info_cmd, capture_output=True, text=True)
-                if info_res.returncode == 0:
-                    data = json.loads(info_res.stdout)
-                    v_time = data.get("timestamp")
-                    v_date = data.get("upload_date")
-                    
-                    if is_video_within_12_hours(v_date, v_time):
-                        url = f"https://www.youtube.com/watch?v={vid_id}"
-                        print(f"✅ تم التقاط مباراة حقيقية مرفوعة حديثاً: {title}")
-                        return url, title
+                if is_valid_football_match(title, duration):
+                    url = f"https://www.youtube.com/watch?v={vid_id}"
+                    print(f"✅ تم التقاط مباراة حقيقية بنجاح: {title}")
+                    return url, title
             except Exception:
                 continue
 
