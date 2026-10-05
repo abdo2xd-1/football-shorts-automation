@@ -2,7 +2,6 @@ import os
 import sys
 import re
 import subprocess
-import requests
 import numpy as np
 import librosa
 from config import CHANNELS
@@ -24,18 +23,13 @@ def prepare_cookies():
         with open(cookie_path, "w", encoding="utf-8") as f:
             f.write(YOUTUBE_COOKIES_DATA.strip() + "\n")
         return cookie_path
-    if os.path.exists(cookie_path) and os.path.getsize(cookie_path) > 30:
-        return cookie_path
     return None
 
 def download_and_extract_audio(raw_url: str):
     clean_link = clean_url(raw_url)
-    print(f"⬇️ جاري سحب الفيديو المباشر: {clean_link}")
+    print(f"⬇️ جاري سحب مباراة المنتخب: {clean_link}")
 
     cookie_file = prepare_cookies()
-    if cookie_file:
-        print("🔑 تم تفعيل ملف الكوكيز بنجاح.")
-
     cmd_download = [
         "yt-dlp",
         "--no-check-certificates",
@@ -45,17 +39,13 @@ def download_and_extract_audio(raw_url: str):
         "--merge-output-format", "mp4",
         "-o", "raw_match.mp4"
     ]
-
     if cookie_file:
         cmd_download.extend(["--cookies", cookie_file])
-
     cmd_download.append(clean_link)
 
     res = subprocess.run(cmd_download, capture_output=True, text=True)
     if res.returncode != 0:
-        print("⚠️️ المحاولة الأولى تعثرت، تفاصيل السجل:")
-        print(res.stderr)
-        print("🔄 جاري تجربة النمط المباشر السريع...")
+        print("⚠️ جاري المحاولة بنمط البث العام المباشر...")
         fallback_cmd = [
             "yt-dlp",
             "--no-check-certificates",
@@ -66,107 +56,98 @@ def download_and_extract_audio(raw_url: str):
         if cookie_file:
             fallback_cmd.extend(["--cookies", cookie_file])
         fallback_cmd.append(clean_link)
-        res_fb = subprocess.run(fallback_cmd, capture_output=True, text=True)
-        if res_fb.returncode != 0:
-            print("❌ رسالة الخطأ الصريحة:")
-            print(res_fb.stderr)
-            raise RuntimeError(res_fb.stderr)
+        subprocess.run(fallback_cmd, check=True)
 
-    print("🎵 استخراج الصوت لتحليل ذروة الحماس...")
+    print("🎵 استخراج الصوت لتحديد اللحظة الأكثر حماساً...")
     cmd_audio = [
         "ffmpeg", "-y", "-i", "raw_match.mp4",
         "-vn", "-ar", "22050", "-ac", "1", "audio.wav"
     ]
     subprocess.run(cmd_audio, check=True)
 
-def find_highlight_timestamps(audio_file="audio.wav", threshold_ratio=0.82):
-    print("🔍 تحليل قمم الصراخ وانفجار الأهداف...")
+def find_best_single_highlight(audio_file="audio.wav"):
+    """تحديد أفضل وأقوى لقطة هدف متصلة واحدة في المباراة بالكامل"""
+    print("🔍 البحث عن أعلى قمة حماس وصراخ (الهدف الحاسم)...")
     y, sr = librosa.load(audio_file, sr=22050)
     rms = librosa.feature.rms(y=y)[0]
     times = librosa.frames_to_time(range(len(rms)), sr=sr)
 
-    threshold = np.max(rms) * threshold_ratio
-    peaks = [times[i] for i in range(len(rms)) if rms[i] > threshold]
+    # تجاهل أول 45 ثانية لتفادي النشيد الوطني والبدايات الفارغة
+    valid_indices = [i for i, t in enumerate(times) if t > 45]
+    if not valid_indices:
+        return 45, 75
 
-    highlights = []
-    last_time = -20
-    for t in peaks:
-        if t - last_time > 15:
-            start = max(0, t - 4)
-            end = t + 6
-            highlights.append((start, end))
-            last_time = t
+    max_idx = valid_indices[np.argmax(rms[valid_indices])]
+    peak_time = times[max_idx]
 
-    selected = highlights[:5]
-    print(f"🎯 المقاطع المختارة: {selected}")
-    return selected
+    # أخذ 12 ثانية قبل الهدف (بناء الهجمة) و 16 ثانية بعده (الاحتفال)
+    start_time = max(0, peak_time - 12)
+    end_time = start_time + 30
 
-def create_shorts_with_blur_layout(highlights, match_title="Match Highlights"):
-    print("🎬 مونتاج الشورتس بالخلفية الضبابية الذكية والشريط الإخباري...")
-    clip_list = []
-    safe_title = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', '', match_title)[:45]
+    print(f"🎯 اللقطة الذهبية المحددة: من {start_time:.1f} إلى {end_time:.1f} ثانية")
+    return start_time, end_time
 
-    for idx, (s, e) in enumerate(highlights):
-        out_name = f"part_{idx}.mp4"
-        duration = e - s
+def render_vertical_short(start_time, end_time, title="مباراة اليوم"):
+    """إنتاج كادر عمودي سينمائي 9:16 بدون تقطيع وبصوت متصل"""
+    duration = end_time - start_time
+    clean_title = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', '', title)[:40]
+    print(f"🎬 تصيير الفيديو النهائي بدقة 1080x1920 (مدة {duration} ثانية)...")
 
-        filter_str = (
+    # تكبير خلفية ضبابية مع وضع كادر اللعب كامل في المنتصف وشريط علوي أنيق
+    filter_complex = (
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg];"
+        "[0:v]scale=1080:-2[fg];"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
+        f"[base]drawbox=y=140:color=black@0.65:width=iw:height=130:t=fill,"
+        f"drawtext=text='{clean_title}':fontsize=40:fontcolor=white:x=(w-text_w)/2:y=185[v]"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(start_time),
+        "-t", str(duration),
+        "-i", "raw_match.mp4",
+        "-filter_complex", filter_complex,
+        "-map", "[v]",
+        "-map", "0:a",
+        "-af", "afade=t=in:ss=0:d=0.5,afade=t=out:st=" + str(duration - 0.5) + ":d=0.5",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:a", "aac", "-b:a", "128k",
+        "final_shorts.mp4"
+    ]
+
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError:
+        simple_filter = (
             "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg];"
             "[0:v]scale=1080:-2[fg];"
-            "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
-            f"[base]drawbox=y=120:color=black@0.6:width=iw:height=140:t=fill,"
-            f"drawtext=text='{safe_title}':fontsize=42:fontcolor=white:x=(w-text_w)/2:y=165[v]"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2"
         )
-
-        cmd = [
-            "ffmpeg", "-y", "-ss", str(s), "-t", str(duration),
+        cmd_fallback = [
+            "ffmpeg", "-y",
+            "-ss", str(start_time),
+            "-t", str(duration),
             "-i", "raw_match.mp4",
-            "-filter_complex", filter_str,
-            "-map", "[v]",
-            "-map", "0:a",
-            "-af", "afade=t=in:ss=0:d=0.3,afade=t=out:st=" + str(duration - 0.3) + ":d=0.3",
+            "-filter_complex", simple_filter,
             "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-            "-c:a", "aac", "-b:a", "128k", out_name
+            "-c:a", "aac",
+            "final_shorts.mp4"
         ]
-        
-        try:
-            subprocess.run(cmd, check=True)
-            clip_list.append(out_name)
-        except subprocess.CalledProcessError:
-            simple_filter = (
-                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg];"
-                "[0:v]scale=1080:-2[fg];"
-                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
-            )
-            fallback_cmd = [
-                "ffmpeg", "-y", "-ss", str(s), "-t", str(duration),
-                "-i", "raw_match.mp4",
-                "-filter_complex", simple_filter,
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "aac", out_name
-            ]
-            subprocess.run(fallback_cmd, check=True)
-            clip_list.append(out_name)
+        subprocess.run(cmd_fallback, check=True)
 
-    with open("clips.txt", "w", encoding="utf-8") as f:
-        for c in clip_list:
-            f.write(f"file '{c}'\n")
-
-    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", "clips.txt", "-c", "copy", "final_shorts.mp4"], check=True)
-    print("🎉 تم استخراج الفيديو بأبعاد Shorts سينمائية: final_shorts.mp4")
+    print("🎉 تم استخراج شورتس المباراة بجودة عالية: final_shorts.mp4")
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("الاستخدام: python process_video.py <channel_key> <youtube_url> [caption]")
+        print("الاستخدام: python process_video.py <channel_key> <youtube_url> [title]")
         sys.exit(1)
 
     channel_arg = sys.argv[1]
     url_arg = sys.argv[2]
-    caption_arg = sys.argv[3] if len(sys.argv) > 3 else "ملخص وأهداف المباراة 🔥⚽"
+    title_arg = sys.argv[3] if len(sys.argv) > 3 else "أقوى لقطات المنتخبات 🔥⚽"
 
     download_and_extract_audio(url_arg)
-    moments = find_highlight_timestamps()
-    if not moments:
-        moments = [(0, 30)]
-    create_shorts_with_blur_layout(moments, caption_arg)
-    print("✅ تم المونتاج بنجاح وتلافي كافة أخطاء الكادر والصوت.")
+    s, e = find_best_single_highlight()
+    render_vertical_short(s, e, title_arg)
+    print("✅ اكتمل المونتاج بنجاح.")
