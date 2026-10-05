@@ -1,107 +1,137 @@
 import os
 import sys
 import json
+import subprocess
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-TOURNAMENTS_CATALOG = """
-1. بطولات الدوريات الكبرى والدوري المصري:
-- إنجلترا: الدوري الإنجليزي الممتاز (Premier League)، كأس الاتحاد (FA Cup)، كأس الرابطة (Carabao Cup).
-- إسبانيا: الدوري الإسباني (La Liga)، كأس الملك (Copa del Rey)، السوبر الإسباني.
-- إيطاليا: الدوري الإيطالي (Serie A)، كأس إيطاليا (Coppa Italia).
-- ألمانيا: الدوري الألماني (Bundesliga)، كأس ألمانيا (DFB-Pokal).
-- فرنسا: الدوري الفرنسي (Ligue 1)، كأس فرنسا (Coupe de France).
-- مصر: الدوري المصري الممتاز، كأس مصر، السوبر المصري، كأس الرابطة المصرية.
+# القوائم الافتراضية للفرق والمنتخبات عند تعذر الوصول لـ Gemini
+FALLBACK_TARGETS = {
+    "crazy_skills": [
+        {"teams": "المغرب ضد مالي", "tournament": "تصفيات أمم أفريقيا"},
+        {"teams": "البرتغال ضد بولندا", "tournament": "دوري الأمم الأوروبية"},
+        {"teams": "إسبانيا ضد صربيا", "tournament": "دوري الأمم الأوروبية"},
+        {"teams": "مصر ضد جنوب أفريقيا", "tournament": "مباراة ودية دولية"}
+    ],
+    "90_plus": [
+        {"teams": "Arsenal vs Chelsea", "tournament": "Premier League"},
+        {"teams": "Real Madrid vs Barcelona", "tournament": "La Liga"},
+        {"teams": "Bayern Munich vs Dortmund", "tournament": "Bundesliga"}
+    ],
+    "hattrick": [
+        {"teams": "الأهلي ضد الزمالك", "tournament": "الدوري المصري الممتاز"},
+        {"teams": "Milan vs Inter", "tournament": "Serie A"},
+        {"teams": "PSG vs Marseille", "tournament": "Ligue 1"}
+    ]
+}
 
-2. بطولات أندية القارات والعالم:
-- دوري أبطال أوروبا، الدوري الأوروبي، دوري المؤتمر، السوبر الأوروبي، كأس العالم للأندية، كأس القارات للأندية.
-- دوري أبطال أفريقيا، كأس الكونفيدرالية الأفريقية، السوبر الأفريقي، الدوري الأفريقي (AFL).
-
-3. بطولات المنتخبات الوطنية:
-- دوري الأمم الأوروبية (UEFA Nations League)، تصفيات كأس العالم (أوروبا، أفريقيا، آسيا، أمريكا ج، كونكاكاف).
-- كأس الأمم الأفريقية (AFCON)، كأس آسيا، كوبا أمريكا، الكأس الذهبية، كأس العالم، الفيناليسيما، والمباريات الودية الدولية الرسمية.
-"""
-
-def get_matches_and_urls_from_gemini(channel_key: str):
-    """جعل Gemini يبحث على الإنترنت ويجلب روابط ملخصات يوتيوب مباشرة"""
+def ask_gemini_matches(channel_key: str):
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    print(f"🤖 جاري استشارة Gemini لجلب المباريات وروابطها لقناة [{channel_key}] ليوم ({today_str})...")
+    print(f"🤖 جاري استخراج مباريات اليوم ({today_str}) لقناة [{channel_key}] عبر Gemini...")
 
-    channel_rules = {
-        "crazy_skills": "مباريات المنتخبات الوطنية الرسمية والودية فقط. ممنوع الأندية نهائياً.",
-        "90_plus": "كبار أندية أوروبا (إنجلترا، إسبانيا، ألمانيا) ودوري أبطال أوروبا وكأس العالم للأندية. ممنوع المنتخبات.",
-        "hattrick": "الدوري المصري، بطولات أفريقيا للأندية، الدوري الإيطالي، والدوري الفرنسي. ممنوع المنتخبات."
-    }
-
-    rule = channel_rules.get(channel_key, "")
+    if not GEMINI_API_KEY or len(GEMINI_API_KEY.strip()) < 10:
+        print("⚠️ مفتاح GEMINI_API_KEY غير موجود، سيتم استخدام الجدول المعتمد الافتراضي.")
+        return FALLBACK_TARGETS.get(channel_key, [])
 
     prompt = f"""
-    أنت باحث رياضي ذكي ومتصل بالإنترنت.
-    تاريخ اليوم: {today_str}.
-    
-    القواعد الصارمة للقناة الحالية ({channel_key}):
-    {rule}
-    
-    القائمة المعتمدة للبطولات:
-    {TOURNAMENTS_CATALOG}
+    أنت محلل رياضي. اليوم هو {today_str}.
+    اذكر فقط المباريات الرسمية أو الودية الحقيقية المنتهية اليوم أو أمس للقناة التالية:
+    القناة: '{channel_key}'
+    - إذا كانت 'crazy_skills': اختر فقط مباريات المنتخبات الوطنية (دوري الأمم، تصفيات أفريقيا، تصفيات كأس العالم، وديات).
+    - إذا كانت '90_plus': اختر كبار أوروبا (إنجلترا، إسبانيا، ألمانيا، دوري الأبطال).
+    - إذا كانت 'hattrick': اختر الدوري المصري، أندية أفريقيا، الدوري الإيطالي، الدوري الفرنسي.
 
-    المهمة المطلوبة:
-    1. ابحث عن المباريات الحقيقية التي لُعبت اليوم أو انتهت خلال آخر 12 إلى 24 ساعة فقط وتطابق قواعد القناة تماماً.
-    2. أحضر رابط يوتيوب المباشر (YouTube URL الحقيقي الصالح) لملخص كل مباراة من القنوات الرسمية أو الموثوقة (مثل beIN Sports, ON Time Sports, Sky Sports, أو ملخصات يوتيوب الرسمية).
-    
-    تنبيه صارم:
-    - ممنوع تماماً ألعاب الفيديو (FIFA, PES, eFootball).
-    - يجب أن تكون روابط يوتيوب حقيقية وصالحة تعمل حالياً.
-
-    أخرج النتيجة بصيغة JSON Array نقية فقط دون أي كلام جانبي:
+    أخرج النتيجة كـ JSON Array فقط بهذا الشكل:
     [
-      {{
-        "teams": "اسم الفريقين أو المنتخبين",
-        "title": "عنوان الملخص",
-        "url": "https://www.youtube.com/watch?v=xxxxxxxxxxx"
-      }}
+      {{"teams": "البرتغال والنرويج", "tournament": "دوري الأمم الأوروبية"}},
+      {{"teams": "المغرب ومالي", "tournament": "تصفيات أمم أفريقيا"}}
     ]
-    إذا لم تكن هناك أي مباريات منتهية لهذه الفئة اليوم، أرجع مصفوفة فارغة: []
+    إذا لم تكن متأكداً، اذكر أبرز مواجهتين من جدول هذا الأسبوع.
     """
 
-    # تفعيل ميزة البحث على الويب لـ Gemini (Google Search Tool)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "tools": [{"googleSearch": {}}]
-    }
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
-        res = requests.post(url, json=payload, timeout=25)
+        res = requests.post(url, json=payload, timeout=12)
         if res.status_code == 200:
-            data = res.json()
-            parts = data['candidates'][0]['content']['parts']
-            full_text = "".join([p.get('text', '') for p in parts])
-            
-            clean_json = full_text.strip()
+            text = res.json()['candidates'][0]['content']['parts'][0]['text']
+            clean_json = text.strip()
             if "```json" in clean_json:
                 clean_json = clean_json.split("```json")[1].split("```")[0].strip()
             elif "```" in clean_json:
                 clean_json = clean_json.split("```")[1].split("```")[0].strip()
-
             matches = json.loads(clean_json)
-            valid_list = [m for m in matches if "youtube.com" in m.get("url", "") or "youtu.be" in m.get("url", "")]
-            print(f"🎯 تم استخراج {len(valid_list)} مباراة بروابطها المباشرة من Gemini بنجاح!")
-            return valid_list
-        else:
-            print(f"⚠️ استجابة Gemini فشلت بكود: {res.status_code} - {res.text}")
+            if matches:
+                return matches
     except Exception as e:
-        print(f"⚠️ خطأ أثناء تواصل Gemini: {e}")
+        print(f"⚠️ خطأ أثناء طلب Gemini: {e}")
 
-    return []
+    return FALLBACK_TARGETS.get(channel_key, [])
 
-if __name__ == "__main__":
+def resolve_youtube_url(query: str):
+    print(f"🔍 جلب رابط الفيديو لـ: '{query}'...")
+    now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(days=1)
+    date_filter = yesterday.strftime("%Y%m%d")
+
+    cmd = [
+        "yt-dlp",
+        f"ytsearch5:{query}",
+        "--dateafter", date_filter,
+        "--dump-json",
+        "--flat-playlist",
+        "--no-warnings"
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        return None, None
+
+    for line in res.stdout.strip().split("\n"):
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+            title = item.get("title", "")
+            duration = item.get("duration", 0) or 0
+            vid_id = item.get("id")
+            
+            # استبعاد الألعاب
+            t_low = title.lower()
+            if any(b in t_low for b in ["fifa", "pes", "efootball", "fc 24", "ps5"]):
+                continue
+
+            if 60 <= duration <= 2400:
+                return f"https://www.youtube.com/watch?v={vid_id}", title
+        except Exception:
+            continue
+
+    return None, None
+
+def main():
     channel = sys.argv[1] if len(sys.argv) > 1 else "crazy_skills"
-    tasks = get_matches_and_urls_from_gemini(channel)
+    match_list = ask_gemini_matches(channel)
+
+    queue = []
+    for item in match_list:
+        teams = item.get("teams", "")
+        tournament = item.get("tournament", "")
+        search_query = f"ملخص مباراة {teams} {tournament} اليوم"
+        url, title = resolve_youtube_url(search_query)
+        if url:
+            queue.append({
+                "url": url,
+                "title": title,
+                "teams": teams
+            })
+            print(f"✅ تم تأكيد المباراة: {teams} -> {url}")
 
     with open("matches_queue.json", "w", encoding="utf-8") as f:
-        json.dump(tasks, f, ensure_ascii=False, indent=2)
+        json.dump(queue, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ تم حفظ مهام القناة [{channel}] في matches_queue.json")
+    print(f"🎯 الحصيلة النهائية: {len(queue)} مباراة جاهزة للإنتاج.")
+
+if __name__ == "__main__":
+    main()
