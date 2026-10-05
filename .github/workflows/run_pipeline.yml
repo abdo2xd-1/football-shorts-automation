@@ -1,29 +1,14 @@
-name: Daily Auto Football Pipeline
+name: Daily National Teams Shorts Pipeline
 
 on:
   schedule:
-    # يعمل يومياً الساعة 12 منتصف الليل بتوقيت مصر (21:00 UTC)
+    # يعمل يومياً الساعة 12 منتصف الليل بتوقيت مصر
     - cron: '0 21 * * *'
   workflow_dispatch:
-    inputs:
-      target_channel:
-        description: 'اختر القناة أو اتركها all لتشغيل كل القنوات'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - 'all'
-          - '90_plus'
-          - 'hattrick'
-          - 'crazy_skills'
 
 jobs:
-  run-pipeline:
+  run-national-pipeline:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        channel: ['90_plus', 'hattrick', 'crazy_skills']
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -33,27 +18,27 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Setup yt-dlp & EJS Engine
+      - name: Setup yt-dlp & Engine
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
           aria2: false
 
-      - name: Install System Tools
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Install Python Dependencies
+      - name: Install Python Libraries
         run: |
           pip install --upgrade pip
           pip install librosa numpy requests scipy soundfile
 
-      - name: Find Today's Match
+      - name: Find Today's International Match
         run: |
-          python auto_finder.py "${{ matrix.channel }}"
+          python auto_finder.py
 
-      - name: Process Match & Generate Shorts
+      - name: Process Match & Generate Highlights
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
@@ -61,15 +46,15 @@ jobs:
           if [ -f target_match.txt ]; then
             MATCH_URL=$(sed -n '1p' target_match.txt)
             MATCH_TITLE=$(sed -n '2p' target_match.txt)
-            echo "🔥 جاري إنتاج شورتس لـ: $MATCH_TITLE"
-            python process_video.py "${{ matrix.channel }}" "$MATCH_URL" "$MATCH_TITLE"
+            echo "🔥 جاري مونتاج شورتس لمباراة: $MATCH_TITLE"
+            python process_video.py "crazy_skills" "$MATCH_URL" "$MATCH_TITLE"
           else
-            echo "ℹ️ لم يتم العثور على مباريات جديدة لهذه القناة اليوم."
+            echo "ℹ️️ لم يتم العثور على مباريات دولية جديدة منشورة اليوم."
           fi
 
-      - name: Save Artifacts
+      - name: Save Shorts Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.channel }}-daily-shorts
+          name: crazy-skills-national-shorts
           path: final_shorts.mp4
