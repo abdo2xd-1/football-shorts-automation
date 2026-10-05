@@ -2,7 +2,6 @@ name: Gemini AI Autonomous Football Pipeline
 
 on:
   schedule:
-    # يعمل يومياً الساعة 12 منتصف الليل بتوقيت مصر
     - cron: '0 21 * * *'
   workflow_dispatch:
 
