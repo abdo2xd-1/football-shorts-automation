@@ -53,15 +53,15 @@ def download_video(raw_url: str, output_raw="match_raw.mp4"):
         subprocess.run(cmd_fallback, check=True)
 
 def find_90s_summary_clips(audio_file="audio.wav"):
-    """تحديد هجمات وأهداف متعددة لإنتاج ملخص مدته 90 ثانية (دقيقة ونصف)"""
+    """تحديد هجمات وأهداف متعددة لإنتاج ملخص كامل مدته دقيقة ونصف (90 ثانية)"""
     y, sr = librosa.load(audio_file, sr=22050)
     rms = librosa.feature.rms(y=y)[0]
     times = librosa.frames_to_time(range(len(rms)), sr=sr)
 
-    # تخطي أول 60 ثانية لتجنب المراسم والنشيد الوطني
-    valid_indices = [i for i, t in enumerate(times) if t > 60]
+    # تخطي أول 75 ثانية لتفادي النشيد الوطني والمراسم
+    valid_indices = [i for i, t in enumerate(times) if t > 75]
     if not valid_indices:
-        return [(60 + i * 10, 70 + i * 10) for i in range(9)]
+        return [(75 + i * 10, 85 + i * 10) for i in range(9)]
 
     valid_rms = rms[valid_indices]
     threshold = np.percentile(valid_rms, 80)
@@ -72,26 +72,22 @@ def find_90s_summary_clips(audio_file="audio.wav"):
 
     for p in peaks:
         if p - last_end > 12:
-            start = max(0, p - 4.0)
-            end = p + 5.5  # لقطة مدتها 9.5 ثوانٍ
+            start = max(0, p - 4.5)
+            end = p + 5.5  # لقطة مدتها 10 ثوانٍ
             clips.append((start, end))
             last_end = end
-            if len(clips) >= 9:  # 9 لقطات * ~10 ثوانٍ = ~90 ثانية
+            if len(clips) >= 9:  # 9 لقطات * 10 ثوانٍ = 90 ثانية (دقيقة ونصف)
                 break
 
     if len(clips) < 5:
-        # خطة بديلة لتغطية 90 ثانية متتابعة
-        base = 70
+        base = 80
         clips = [(base + i * 10, base + (i + 1) * 10) for i in range(9)]
 
     return clips
 
 def render_summary_short(raw_video, clips, title_clean, output_file):
     clip_files = []
-    
-    # تبسيط العنوان وتنسيقه لسطر واحد في المنتصف
-    safe_title = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF\s]', '', title_clean).strip()
-    safe_title = " ".join(safe_title.split()[:5])
+    header_title = title_clean.strip()
 
     for idx, (s, e) in enumerate(clips):
         part_name = f"part_{idx}.mp4"
@@ -102,7 +98,7 @@ def render_summary_short(raw_video, clips, title_clean, output_file):
             "[0:v]scale=1080:-2[fg];"
             "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
             f"[base]drawbox=y=130:color=black@0.65:width=iw:height=120:t=fill,"
-            f"drawtext=text='{safe_title}':fontsize=38:fontcolor=white:x=(w-text_w)/2:y=170[v]"
+            f"drawtext=text='{header_title}':fontsize=38:fontcolor=white:x=(w-text_w)/2:y=170[v]"
         )
 
         cmd = [
@@ -121,7 +117,7 @@ def render_summary_short(raw_video, clips, title_clean, output_file):
         subprocess.run(cmd, check=True)
         clip_files.append(part_name)
 
-    # دمج كافة اللقطات للحصول على 90 ثانية متصلة
+    # دمج اللقطات لتكوين ملخص الـ 90 ثانية المتصل
     with open("concat_list.txt", "w", encoding="utf-8") as f:
         for p in clip_files:
             f.write(f"file '{p}'\n")
@@ -143,7 +139,7 @@ def process_all():
         queue = json.load(f)
 
     if not queue:
-        print("ℹ لا توجد مباريات جديدة مستخرجة لليوم.")
+        print("ℹ قائمة المباريات فارغة لليوم.")
         return
 
     os.makedirs("output_shorts", exist_ok=True)
