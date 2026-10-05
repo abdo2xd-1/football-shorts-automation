@@ -1,4 +1,4 @@
-name: Daily National Teams Shorts Pipeline
+name: Gemini AI Autonomous Football Pipeline
 
 on:
   schedule:
@@ -7,8 +7,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  run-national-pipeline:
+  pipeline:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: ['crazy_skills', '90_plus', 'hattrick']
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -18,7 +22,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Setup yt-dlp & Engine
+      - name: Setup yt-dlp & EJS Engine
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
@@ -34,27 +38,22 @@ jobs:
           pip install --upgrade pip
           pip install librosa numpy requests scipy soundfile
 
-      - name: Find Today's International Match
+      - name: Query Gemini for Today's Scheduled Matches
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          python auto_finder.py
+          python auto_finder.py "${{ matrix.channel }}"
 
-      - name: Process Match & Generate Highlights
+      - name: Process & Render All Match Shorts
         env:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
-          if [ -f target_match.txt ]; then
-            MATCH_URL=$(sed -n '1p' target_match.txt)
-            MATCH_TITLE=$(sed -n '2p' target_match.txt)
-            echo "🔥 جاري مونتاج شورتس لمباراة: $MATCH_TITLE"
-            python process_video.py "crazy_skills" "$MATCH_URL" "$MATCH_TITLE"
-          else
-            echo "ℹ️️ لم يتم العثور على مباريات دولية جديدة منشورة اليوم."
-          fi
+          python process_video.py
 
-      - name: Save Shorts Artifact
+      - name: Upload All Generated Shorts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crazy-skills-national-shorts
-          path: final_shorts.mp4
+          name: ${{ matrix.channel }}-daily-shorts
+          path: output_shorts/*.mp4
