@@ -2,120 +2,122 @@ import os
 import sys
 import json
 import subprocess
-import requests
 from datetime import datetime, timezone, timedelta
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
+# الكلمات الممنوعة قطعياً لاستبعاد ألعاب الفيديو ومباريات السيدات والناشئين
 BANNED_KEYWORDS = [
     "fifa", "pes", "efootball", "fc 24", "fc 25", "fc 26", "ps5", "ps4",
     "gameplay", "mod", "simulation", "محاكاة", "بلايستيشن", "بيس", "فيفا",
-    "women", "female", "liga f", "wsl", "سيدات", "سيدات كرة القدم", "u17", "u19", "u20", "ناشئين"
+    "women", "female", "liga f", "wsl", "سيدات", "سيدات كرة القدم", 
+    "u17", "u19", "u20", "u23", "ناشئين", "شباب", "olympic"
 ]
 
-def ask_gemini_matches(channel_key: str):
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    print(f"🤖 جاري استشارة Gemini لمباريات اليوم ({today_str}) لقناة [{channel_key}]...")
-
-    channel_rules = {
-        "crazy_skills": "مباريات المنتخبات الوطنية الأولى (رجال) فقط مثل دوري الأمم الأوروبية وتصفيات كأس العالم وأفريقيا والوديات الدولية للرجال. ممنوع السيدات وممنوع الأندية.",
-        "90_plus": "مباريات كبار أندية الرجال (إنجلترا، إسبانيا، ألمانيا، دوري أبطال أوروبا، كأس العالم للأندية). ممنوع السيدات وممنوع المنتخبات.",
-        "hattrick": "مباريات أندية الرجال فقط: الدوري المصري الممتاز، دوري أبطال أفريقيا، الدوري الإيطالي، الدوري الفرنسي. ممنوع السيدات وممنوع المنتخبات."
-    }
-
-    prompt = f"""
-    أنت محلل وباحث رياضي. تاريخ اليوم: {today_str}.
-    اذكر مباريات كرة القدم الرسمية أو الودية للرجال (الفرق الأولى فقط) التي لُعبت اليوم أو انتهت خلال آخر 24 ساعة فقط مطابقة للشروط:
-    {channel_rules.get(channel_key, "")}
-
-    ممنوع نهائياً: مباريات السيدات، مباريات الناشئين، أو مباريات قديمة.
-
-    أخرج النتيجة كـ JSON Array نقي فقط بدون أي شرح جانبي:
-    [
-      {{"team1": "الفريق الأول", "team2": "الفريق الثاني", "tournament": "اسم البطولة"}}
+# الكلمات المفتاحية الخاصة بكل قناة لملخصات الرجال الرسمية
+CHANNEL_SEARCH_QUERIES = {
+    "crazy_skills": [
+        "ملخص دوري الأمم الأوروبية اليوم",
+        "UEFA Nations League highlights today",
+        "ملخص تصفيات كأس العالم اليوم",
+        "World Cup Qualifiers highlights today",
+        "ملخص تصفيات أمم أفريقيا اليوم",
+        "AFCON qualifiers highlights today",
+        "ملخص مباريات دولية ودية اليوم"
+    ],
+    "90_plus": [
+        "Premier League highlights today",
+        "La Liga highlights today",
+        "Bundesliga highlights today",
+        "Champions League highlights today",
+        "ملخص الدوري الإنجليزي اليوم",
+        "ملخص الدوري الإسباني اليوم",
+        "ملخص دوري أبطال أوروبا اليوم"
+    ],
+    "hattrick": [
+        "ملخص الدوري المصري اليوم",
+        "أهداف الدوري المصري اليوم",
+        "Serie A highlights today",
+        "Ligue 1 highlights today",
+        "ملخص دوري أبطال أفريقيا اليوم",
+        "CAF Champions League highlights today"
     ]
-    إذا لم تكن هناك مباريات منتهية جديدة لهذه الفئة اليوم، أرجع مصفوفة فارغة: []
-    """
+}
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+def is_valid_match(title: str, duration: int) -> bool:
+    title_lower = title.lower()
+    
+    # فحص الكلمات الممنوعة
+    for ban in BANNED_KEYWORDS:
+        if ban in title_lower:
+            return False
+            
+    # مدة ملخص مباراة حقيقية (بين 2.5 دقيقة إلى 30 دقيقة)
+    if not (150 <= duration <= 1800):
+        return False
+        
+    return True
 
-    try:
-        res = requests.post(url, json=payload, timeout=20)
-        if res.status_code == 200:
-            text = res.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
-            return json.loads(text)
-    except Exception as e:
-        print(f"⚠️ تنبيه أثناء طلب Gemini: {e}")
-
-    return []
-
-def resolve_youtube_url(team1: str, team2: str, tournament: str):
-    query = f"ملخص مباراة {team1} و {team2} {tournament}"
-    print(f"🔍 البحث عن فيديو: {query}")
+def find_matches_for_channel(channel_key: str):
+    queries = CHANNEL_SEARCH_QUERIES.get(channel_key, [])
+    print(f"📡 بدء البحث المباشر عن مباريات الرجال الرسمية لليوم لقناة [{channel_key}]...")
 
     now = datetime.now(timezone.utc)
     yesterday = now - timedelta(days=1)
     date_filter = yesterday.strftime("%Y%m%d")
 
-    cmd = [
-        "yt-dlp",
-        f"ytsearch5:{query}",
-        "--dateafter", date_filter,
-        "--dump-json",
-        "--flat-playlist",
-        "--no-warnings"
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode != 0:
-        return None, None
+    found_matches = []
+    seen_ids = set()
 
-    for line in res.stdout.strip().split("\n"):
-        if not line:
+    for q in queries:
+        print(f"🔍 فحص استعلام: '{q}'...")
+        cmd = [
+            "yt-dlp",
+            f"ytsearch6:{q}",
+            "--dateafter", date_filter,
+            "--dump-json",
+            "--flat-playlist",
+            "--no-warnings"
+        ]
+
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
             continue
-        try:
-            item = json.loads(line)
-            title = item.get("title", "")
-            duration = item.get("duration", 0) or 0
-            vid_id = item.get("id")
-            title_lower = title.lower()
 
-            if any(b in title_lower for b in BANNED_KEYWORDS):
+        for line in res.stdout.strip().split("\n"):
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+                vid_id = item.get("id")
+                title = item.get("title", "")
+                duration = item.get("duration", 0) or 0
+
+                if vid_id in seen_ids:
+                    continue
+
+                if is_valid_match(title, duration):
+                    seen_ids.add(vid_id)
+                    found_matches.append({
+                        "url": f"https://www.youtube.com/watch?v={vid_id}",
+                        "title": title
+                    })
+                    print(f"✅ تم التقاط مباراة مطابقة: {title}")
+
+                    # الاكتفاء بأول 2 إلى 3 مباريات ممتازة لكل قناة يومياً
+                    if len(found_matches) >= 3:
+                        return found_matches
+            except Exception:
                 continue
 
-            if 120 <= duration <= 2100:
-                return f"https://www.youtube.com/watch?v={vid_id}", title
-        except Exception:
-            continue
-
-    return None, None
+    return found_matches
 
 def main():
     channel = sys.argv[1] if len(sys.argv) > 1 else "crazy_skills"
-    matches = ask_gemini_matches(channel)
-
-    queue = []
-    for m in matches:
-        t1 = m.get("team1")
-        t2 = m.get("team2")
-        tourn = m.get("tournament", "")
-        url, title = resolve_youtube_url(t1, t2, tourn)
-        if url:
-            queue.append({
-                "url": url,
-                "title": f"{t1} ضد {t2}",
-                "teams": f"{t1} vs {t2}"
-            })
-            print(f"✅ تم تأكيد المباراة: {t1} ضد {t2}")
+    matches = find_matches_for_channel(channel)
 
     with open("matches_queue.json", "w", encoding="utf-8") as f:
-        json.dump(queue, f, ensure_ascii=False, indent=2)
+        json.dump(matches, f, ensure_ascii=False, indent=2)
 
-    print(f"🎯 الحصيلة النهائية: {len(queue)} مباراة.")
+    print(f"🎯 تم حفظ {len(matches)} مباراة في matches_queue.json")
 
 if __name__ == "__main__":
     main()
